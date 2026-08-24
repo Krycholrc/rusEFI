@@ -1,0 +1,152 @@
+pins:
+  - id: C6
+    class: outputs
+    ts_name: INJ1 (PC6)
+
+  - id: D10
+    class: outputs
+    ts_name: INJ2 (PD10)
+
+  - id: D14
+    class: outputs
+    ts_name: INJ3 (PD14)
+
+  - id: D12
+    class: outputs
+    ts_name: INJ4 (PD12)
+
+  - id: D15
+    class: outputs
+    ts_name: INJ5 (PD15)
+
+  - id: D13
+    class: outputs
+    ts_name: INJ6 (PD13)
+
+  - id: E2
+    class: outputs
+    ts_name: IGN1 (PE2)
+
+  - id: E3
+    class: outputs
+    ts_name: IGN2 (PE3)
+
+  - id: C13
+    class: outputs
+    ts_name: IGN3 (PC13)
+
+  - id: E6
+    class: outputs
+    ts_name: IGN4 (PE6)
+
+  - id: E4
+    class: outputs
+    ts_name: IGN5 (PE4)
+
+  - id: E5
+    class: outputs
+    ts_name: IGN6 (PE5)
+
+  - id: E11
+    class: outputs
+    ts_name: FUEL_PUMP (PE11)
+
+  - id: D7
+    class: outputs
+    ts_name: TACHO (PD7)
+
+  - id: D11
+    class: outputs
+    ts_name: VANOS (PD11)
+
+  - id: B9
+    class: outputs
+    ts_name: IDLE1 (PB9)
+
+  - id: B7
+    class: outputs
+    ts_name: IDLE2 (PB7)
+
+  - id: B15
+    class: outputs
+    ts_name: BOOST (PB15)
+
+  - id: B8
+    class: outputs
+    ts_name: FAN (PB8)
+
+  - id: E0
+    class: outputs
+    ts_name: CEL (PE0)
+
+  - id: EFI_ADC_0
+    class: analog_inputs
+    ts_name: IAT (PA0) 
+
+  - id: EFI_ADC_1
+    class: analog_inputs
+    ts_name: CLT (PA1)
+
+  - id: EFI_ADC_2
+    class: analog_inputs
+    ts_name: TPS (PA2)
+
+  - id: EFI_ADC_3
+    class: analog_inputs
+    ts_name: MAP (PA3)
+
+  - id: EFI_ADC_4
+    class: analog_inputs
+    ts_name: BATT (PA4) 
+
+  - id: EFI_ADC_5
+    class: analog_inputs
+    ts_name: BARO (PA5)
+
+  - id: EFI_ADC_8
+    class: analog_inputs
+    ts_name: O2_Sensor (PB0)
+
+  - id: EFI_ADC_9
+    class: analog_inputs
+    ts_name: ANALOG_A9 (PB1)
+
+  - id: EFI_ADC_10
+    class: analog_inputs
+    ts_name: ANALOG_A10 (PC0)
+
+  - id: EFI_ADC_11
+    class: analog_inputs
+    ts_name: ANALOG_A11 (PC1)
+
+  - id: EFI_ADC_12
+    class: analog_inputs
+    ts_name: ANALOG_A12 (PC2)
+
+  - id: [D3, D3]
+    class: [switch_inputs, event_inputs]
+    ts_name: CRANK (PD3)
+
+  - id: [D4, D4]
+    class: [switch_inputs, event_inputs]
+    ts_name: CAM (PD4)
+
+  - id: C7
+    class: switch_inputs
+    ts_name: A/C_SW (PC7)
+
+  - id: B12
+    class: switch_inputs
+    ts_name: IN1 (PB12)
+
+  - id: B13
+    class: switch_inputs
+    ts_name: IN2 (PB13)
+
+  - id: B14
+    class: switch_inputs
+    ts_name: IN3 (PB14)
+
+  - id: E15
+    class: switch_inputs
+    ts_name: LAUNCH (PE15)
