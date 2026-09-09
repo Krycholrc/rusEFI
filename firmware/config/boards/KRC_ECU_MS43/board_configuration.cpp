@@ -14,6 +14,22 @@ Gpio getWarningLedPin() {
 
 static void KRC_ECU_MS43_boardDefaultConfiguration() {
 
+  //Injectors
+  engineConfiguration->injectionPins[0] = Gpio::D8;
+	engineConfiguration->injectionPins[1] = Gpio::D9;
+	engineConfiguration->injectionPins[2] = Gpio::D10;
+	engineConfiguration->injectionPins[3] = Gpio::D11;
+	engineConfiguration->injectionPins[4] = Gpio::D12;
+	engineConfiguration->injectionPins[5] = Gpio::D13;
+
+  //Ignitions
+	engineConfiguration->ignitionPins[0] = Gpio::E0;
+	engineConfiguration->ignitionPins[1] = Gpio::E1;
+	engineConfiguration->ignitionPins[2] = Gpio::E2;
+	engineConfiguration->ignitionPins[3] = Gpio::E3;
+	engineConfiguration->ignitionPins[4] = Gpio::E4;
+	engineConfiguration->ignitionPins[5] = Gpio::E5;
+
 	//Digital out
 	engineConfiguration->boostControlPin = Gpio::A8;
 	engineConfiguration->mainRelayPin = Gpio::C13;
@@ -23,22 +39,24 @@ static void KRC_ECU_MS43_boardDefaultConfiguration() {
 	//Input pin
 	engineConfiguration->triggerInputPins[0] = Gpio::D3;
 	engineConfiguration->camInputs[0] = Gpio::D4;
-        engineConfiguration->camInputs[1] = Gpio::D5;
+  engineConfiguration->camInputs[1] = Gpio::D5;
 
 	//Idle configuration
-        engineConfiguration->useStepperIdle = false;
-        engineConfiguration->isDoubleSolenoidIdle = true;
-        engineConfiguration->idle.solenoidPin = Gpio::B9;
-        engineConfiguration->secondSolenoidPin = Gpio::B8;
+  engineConfiguration->useStepperIdle = false;
+  engineConfiguration->isDoubleSolenoidIdle = true;
+  engineConfiguration->idle.solenoidPin = Gpio::B9;
+  engineConfiguration->secondSolenoidPin = Gpio::B8;
 
 	//Analog
 	engineConfiguration->clt.adcChannel = EFI_ADC_0;
 	engineConfiguration->iat.adcChannel = EFI_ADC_1;
 	engineConfiguration->vbattAdcChannel = EFI_ADC_4;
+  engineConfiguration->tps1_1AdcChannel = EFI_ADC_12;
+  engineConfiguration->tps2_2AdcChannel = EFI_ADC_13;
 
-        //Baro sensor
-        engineConfiguration->baroSensor.hwChannel = EFI_ADC_NONE;
-        engineConfiguration->lps25BaroSensorScl = Gpio::B10;
+  //Baro sensor
+  engineConfiguration->baroSensor.hwChannel = EFI_ADC_NONE;
+  engineConfiguration->lps25BaroSensorScl = Gpio::B10;
 	engineConfiguration->lps25BaroSensorSda = Gpio::B11;
 
 	//DBW throotle
@@ -53,20 +71,20 @@ static void KRC_ECU_MS43_boardDefaultConfiguration() {
 	engineConfiguration->iat.config.bias_resistor = 2200;
 
 	//Analog calc
-        engineConfiguration->analogInputDividerCoefficient = 1.55f;
-        engineConfiguration->vbattDividerCoeff = (7.47f / 1.0f);
-        engineConfiguration->adcVcc = 3.12f;
+  engineConfiguration->analogInputDividerCoefficient = 1.55f;
+  engineConfiguration->vbattDividerCoeff = (7.47f / 1.0f);
+  engineConfiguration->adcVcc = 3.12f;
 
 	// SPI2 EGT
 	engineConfiguration->is_enabled_spi_2 = true;
 	engineConfiguration->spi2mosiPin = Gpio::Unassigned;
 	engineConfiguration->spi2misoPin = Gpio::B14;
 	engineConfiguration->spi2sckPin = Gpio::B13;
-        engineConfiguration->max31855spiDevice = SPI_DEVICE_2;
+  engineConfiguration->max31855spiDevice = SPI_DEVICE_2;
 	engineConfiguration->max31855_cs[0] = Gpio::B12;
 
-        //SPI3 SD card
-        engineConfiguration->isSdCardEnabled = true;
+  //SPI3 SD card
+  engineConfiguration->isSdCardEnabled = true;
 	engineConfiguration->is_enabled_spi_3 = true;
 	engineConfiguration->sdCardSpiDevice = SPI_DEVICE_3;
 	engineConfiguration->spi3mosiPin = Gpio::C10;
@@ -78,12 +96,12 @@ static void KRC_ECU_MS43_boardDefaultConfiguration() {
 	//CAN1 bus overwrites
 	engineConfiguration->canTxPin = Gpio::D1;
 	engineConfiguration->canRxPin = Gpio::D0;
-        engineConfiguration->canWriteEnabled = true;
+  engineConfiguration->canWriteEnabled = true;
 	engineConfiguration->canReadEnabled = true;
 	engineConfiguration->canSleepPeriodMs = 50;
 	engineConfiguration->canBaudRate = B500KBPS;
 
-        //CAN2 bus overwrites
+  //CAN2 bus overwrites
 	engineConfiguration->can2TxPin = Gpio::B6;              
 	engineConfiguration->can2RxPin = Gpio::B5;
 	engineConfiguration->can2BaudRate = B500KBPS;
