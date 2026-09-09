@@ -27,7 +27,8 @@
 #define ts_show_second_bank false
 #define ts_show_alternator false
 #define ts_show_experimental false
-#define ts_show_vvt_output false
+#define ts_show_vvt_output true
+#define ts_show_vvl_output false
 #define ts_show_speedo_settings false
 #define ts_show_ford_toyota_tps_pps false
 #define ts_show_starter_disable false
