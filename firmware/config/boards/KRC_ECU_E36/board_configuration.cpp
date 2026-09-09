@@ -14,6 +14,22 @@ Gpio getWarningLedPin() {
 
 static void KRC_ECU_E36_boardDefaultConfiguration() {
 
+  //Injectors
+  engineConfiguration->injectionPins[0] = Gpio::E0;
+	engineConfiguration->injectionPins[1] = Gpio::E1;
+	engineConfiguration->injectionPins[2] = Gpio::E2;
+	engineConfiguration->injectionPins[3] = Gpio::E3;
+	engineConfiguration->injectionPins[4] = Gpio::E4;
+	engineConfiguration->injectionPins[5] = Gpio::E5;
+
+  //Ignitions
+	engineConfiguration->ignitionPins[0] = Gpio::D8;
+	engineConfiguration->ignitionPins[1] = Gpio::D9;
+	engineConfiguration->ignitionPins[2] = Gpio::D10;
+	engineConfiguration->ignitionPins[3] = Gpio::D11;
+	engineConfiguration->ignitionPins[4] = Gpio::D12;
+	engineConfiguration->ignitionPins[5] = Gpio::D13;
+
 	//Digital out
 	engineConfiguration->mainRelayPin = Gpio::C13;
 	engineConfiguration->tachOutputPin = Gpio::D7;
