@@ -1,0 +1,64 @@
+pins:
+  - id: CAN_INPUT_0
+    class: switch_inputs
+    ts_name: CAN Switch 1
+
+  - id: CAN_INPUT_1
+    class: switch_inputs
+    ts_name: CAN Switch 2
+
+  - id: CAN_INPUT_2
+    class: switch_inputs
+    ts_name: CAN Switch 3
+
+  - id: CAN_INPUT_3
+    class: switch_inputs
+    ts_name: CAN Switch 4
+
+  - id: CAN_INPUT_4
+    class: switch_inputs
+    ts_name: CAN Switch 5
+
+  - id: CAN_INPUT_5
+    class: switch_inputs
+    ts_name: CAN Switch 6
+
+  - id: CAN_INPUT_6
+    class: switch_inputs
+    ts_name: CAN Switch 7
+
+  - id: CAN_INPUT_7
+    class: switch_inputs
+    ts_name: CAN Switch 8
+
+  - id: EFI_ADC_48
+    class: analog_inputs
+    ts_name: CAN Analog 1
+
+  - id: EFI_ADC_49
+    class: analog_inputs
+    ts_name: CAN Analog 2
+
+  - id: EFI_ADC_50
+    class: analog_inputs
+    ts_name: CAN Analog 3
+
+  - id: EFI_ADC_51
+    class: analog_inputs
+    ts_name: CAN Analog 4
+
+  - id: EFI_ADC_52
+    class: analog_inputs
+    ts_name: CAN Analog 5
+
+  - id: EFI_ADC_53
+    class: analog_inputs
+    ts_name: CAN Analog 6
+
+  - id: EFI_ADC_54
+    class: analog_inputs
+    ts_name: CAN Analog 7
+
+  - id: EFI_ADC_55
+    class: analog_inputs
+    ts_name: CAN Analog 8
