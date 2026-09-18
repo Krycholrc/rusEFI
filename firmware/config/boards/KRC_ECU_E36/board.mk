@@ -30,6 +30,9 @@ DDEFS += -DEFI_MAX_31855=TRUE
 # SENT
 DDEFS += -DEFI_SENT_SUPPORT=FALSE
 
+# RTC
+DDEFS += -DEFI_RTC=TRUE
+
 # reduce memory usage monitoring
 DDEFS += -DRAM_UNUSED_SIZE=1
 
