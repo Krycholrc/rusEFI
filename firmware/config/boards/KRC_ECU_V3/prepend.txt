@@ -31,7 +31,7 @@
 #define ts_show_speedo_settings false
 #define ts_show_ford_toyota_tps_pps false
 #define ts_show_starter_disable false
-#define ts_show_ecu_stimulator false
+#define ts_show_ecu_stimulator true
 #define ts_show_ign_key_menu false
 #define ts_show_stepper_hbridge false
 #define ts_show_stepper_push_pull false
