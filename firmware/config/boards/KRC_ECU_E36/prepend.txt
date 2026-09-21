@@ -38,8 +38,7 @@
 #define ts_show_status_leds false
 #define ts_show_experimental false
 #define ts_show_vvt_output false
-#define ts_show_ign_key_analog_input false
-#define ts_show_ign_key_switch false
+#define ts_show_ign_key_menu false
 #define ts_show_ecu_stimulator false
 #define ts_show_live_data true
 #define ts_show_analog_o2 false
