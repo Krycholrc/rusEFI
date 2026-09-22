@@ -17,8 +17,10 @@ java -jar java_console/mcp_can/build/libs/mcp_can-all.jar --backend slcan --port
 
 On Windows, use a port such as `COM5`. Without `--port`, the server probes serial ports,
 rejects the primary TunerStudio console, and opens the first SLCAN port found. With
-`--port`, only that port is probed. Use an explicit port when several ECUs are attached;
-USB port numbering does not reliably identify the sniffer interface.
+`--port`, the server treats that port as the SLCAN interface: it skips console autodetection,
+closes and drains any stale streaming session, then verifies the SLCAN version. Use an
+explicit port when several ECUs are attached; USB port numbering does not reliably identify
+the sniffer interface. Supplying the primary console port explicitly will not work.
 
 Close the console's SLCAN tab or other applications holding the sniffer port before
 connecting. The primary ECU console and the secondary SLCAN port can be used separately.
@@ -26,9 +28,10 @@ PCAN hardware and its native driver are not required for SLCAN.
 
 The ECU tune controls CAN bus selection and bitrate. Enable `canSnifferN_read` for each
 bus whose received traffic you want to capture. With default settings, only the ECU's
-own transmitted frames may appear. The server sends the required `C` / `S6` / `O`
-initialization sequence; `S6` does not change the ECU's bitrate. `--channel` applies only
-to PCAN. No CAN transmit tool is exposed.
+own transmitted frames may appear. Explicit-port setup sends a self-synchronizing
+`C` / `V` / `S6` / `O` initialization sequence that tolerates stale and delayed USB
+replies; `S6` does not change the ECU's bitrate. `--channel` applies only to PCAN. No CAN
+transmit tool is exposed.
 
 ## PCAN
 

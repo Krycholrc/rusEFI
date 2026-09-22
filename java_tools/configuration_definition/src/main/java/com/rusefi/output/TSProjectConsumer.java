@@ -85,7 +85,8 @@ public class TSProjectConsumer implements ConfigurationConsumer {
 
     public TSProjectConsumer(String tsPath, ReaderStateImpl state, GaugeIgnoreList ignoreList, TreeSet<String> usedNames) {
         this.tsPath = tsPath;
-        consumerState = new TSProjectConsumerState(state, new TsOutput(true, usedNames));
+        // [tag:wue_analyzer] Main calibration aliases use page 1 offsets.
+        consumerState = new TSProjectConsumerState(state, new TsOutput(true, usedNames, 1));
         this.state = state;
         this.ignoreList = ignoreList;
     }
@@ -433,4 +434,3 @@ public class TSProjectConsumer implements ConfigurationConsumer {
         return consumerState.tsOutput.getContent();
     }
 }
-

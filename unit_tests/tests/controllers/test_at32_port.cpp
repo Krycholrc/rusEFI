@@ -1,6 +1,18 @@
 #include <gtest/gtest.h>
 #include "../../../firmware/hw_layer/ports/at32/at32_reset_cause.h"
 #include "gpio/l9779_spi.h"
+#include "../../../firmware/hw_layer/ports/at32/at32f4/cfg/mcuconf.h"
+
+// ADC callbacks validate their NVIC priority against EFI_IRQ_ADC_PRIORITY.
+TEST(At32IrqPriority, AdcMatchesCallbackExpectation) {
+	EXPECT_EQ(EFI_IRQ_ADC_PRIORITY, STM32_ADC_IRQ_PRIORITY);
+}
+
+TEST(At32IrqPriority, AdcDmaMatchesCallbackExpectation) {
+	EXPECT_EQ(EFI_IRQ_ADC_PRIORITY, STM32_ADC_ADC1_DMA_IRQ_PRIORITY);
+	EXPECT_EQ(EFI_IRQ_ADC_PRIORITY, STM32_ADC_ADC2_DMA_IRQ_PRIORITY);
+	EXPECT_EQ(EFI_IRQ_ADC_PRIORITY, STM32_ADC_ADC3_DMA_IRQ_PRIORITY);
+}
 
 TEST(At32ResetCause, ResetFlags) {
 	EXPECT_EQ(Reset_Cause_NRST_Pin, decodeAt32ResetCause(1U << 26));
@@ -42,4 +54,178 @@ TEST(L9779Spi, AllPayloadsPreserveDataAndHaveOddParity) {
 		EXPECT_EQ(1U, ones % 2U);
 		EXPECT_EQ(wire, l9779PrepareSpiWord(wire));
 	}
+}
+
+TEST(L9779Spi, ReadRepliesMatchBySubaddress) {
+	L9779ReadTracker tracker;
+
+	EXPECT_TRUE(tracker.push(0x0e));
+	EXPECT_TRUE(tracker.push(0x0f));
+	EXPECT_EQ(static_cast<size_t>(2), tracker.size());
+
+	// A later request may be answered first without losing the older one.
+	EXPECT_TRUE(tracker.consume(0x0f));
+	EXPECT_EQ(static_cast<size_t>(1), tracker.size());
+
+	// An unrelated/stale reply does not shift the outstanding request stream.
+	EXPECT_FALSE(tracker.consume(0x01));
+	EXPECT_EQ(static_cast<size_t>(1), tracker.size());
+	EXPECT_TRUE(tracker.consume(0x0e));
+	EXPECT_EQ(static_cast<size_t>(0), tracker.size());
+}
+
+TEST(L9779Spi, ReadTrackerBoundsOutstandingRequests) {
+	L9779ReadTracker tracker;
+
+	for (size_t i = 0; i < L9779ReadTracker::Capacity; i++) {
+		EXPECT_TRUE(tracker.push(static_cast<uint8_t>(i)));
+	}
+
+	EXPECT_FALSE(tracker.push(0xff));
+	EXPECT_EQ(L9779ReadTracker::Capacity, tracker.size());
+
+	tracker.clear();
+	EXPECT_EQ(static_cast<size_t>(0), tracker.size());
+}
+
+TEST(L9779Spi, FrameLogRetainsNewestFramesInChronologicalOrder) {
+	L9779SpiFrameLog log;
+
+	for (size_t i = 0; i < L9779SpiFrameLog::Capacity + 2; i++) {
+		log.record(
+			static_cast<uint16_t>(0x1000 + i),
+			static_cast<uint16_t>(0x2000 + i),
+			static_cast<uint8_t>(i),
+			-static_cast<int>(i));
+	}
+
+	ASSERT_EQ(L9779SpiFrameLog::Capacity, log.size());
+	const L9779SpiFrame* oldest = log.get(0);
+	ASSERT_NE(nullptr, oldest);
+	EXPECT_EQ(0x1002, oldest->tx);
+	EXPECT_EQ(0x2002, oldest->rx);
+	EXPECT_EQ(2, oldest->subaddress);
+	EXPECT_EQ(-2, oldest->result);
+
+	const L9779SpiFrame* newest = log.get(log.size() - 1);
+	ASSERT_NE(nullptr, newest);
+	EXPECT_EQ(0x1000 + L9779SpiFrameLog::Capacity + 1, newest->tx);
+	EXPECT_EQ(0x2000 + L9779SpiFrameLog::Capacity + 1, newest->rx);
+	EXPECT_EQ(L9779SpiFrameLog::Capacity + 1, newest->subaddress);
+	EXPECT_EQ(-static_cast<int>(L9779SpiFrameLog::Capacity + 1), newest->result);
+	EXPECT_EQ(nullptr, log.get(log.size()));
+}
+
+TEST(L9779Spi, DirectDriveChannelsUsePermanentEnableMask) {
+	const L9779OutputRegisters packed = l9779PackOutputRegisters(
+		0,
+		L9779_DIRECT_DRIVE_MASK);
+
+	EXPECT_EQ(L9779_DIRECT_DRIVE_MASK, packed.enabledState);
+	EXPECT_EQ(0xf8, packed.control[0]); // OUT1..5
+	EXPECT_EQ(0x0f, packed.control[1]); // IGN1..4
+	EXPECT_EQ(0x03, packed.control[2]); // OUT6..7
+	EXPECT_EQ(0x00, packed.control[3]);
+
+	// A logical high cannot enable a direct channel with no physical input.
+	const L9779OutputRegisters unavailable = l9779PackOutputRegisters(
+		L9779_DIRECT_DRIVE_MASK,
+		0);
+	EXPECT_EQ(0U, unavailable.enabledState);
+}
+
+TEST(L9779Spi, Output13And14PackIntoTheirOwnControlBits) {
+	constexpr uint32_t Out13 = uint32_t{1} << 16;
+	constexpr uint32_t Out14 = uint32_t{1} << 17;
+
+	const L9779OutputRegisters out13 = l9779PackOutputRegisters(Out13, 0);
+	EXPECT_EQ(0x00, out13.control[1]);
+	EXPECT_EQ(0x10, out13.control[2]);
+
+	const L9779OutputRegisters out14 = l9779PackOutputRegisters(Out14, 0);
+	EXPECT_EQ(0x40, out14.control[1]);
+	EXPECT_EQ(0x00, out14.control[2]);
+}
+
+TEST(L9779Spi, MapsOutputsToDatasheetDiagnosisFields) {
+	const auto expectLocation = [](size_t pin, int reg, unsigned int shift) {
+		const L9779DiagLocation location = l9779GetDiagLocation(pin);
+		EXPECT_EQ(reg, location.registerIndex);
+		EXPECT_EQ(shift, location.shift);
+	};
+
+	expectLocation(0, 7, 0);   // IGN1
+	expectLocation(3, 7, 6);   // IGN4
+	expectLocation(4, 0, 0);   // OUT1
+	expectLocation(10, 1, 4);  // OUT7
+	expectLocation(16, 2, 4);  // OUT13
+	expectLocation(17, 2, 6);  // OUT14
+	expectLocation(18, 3, 0);  // OUT15
+	expectLocation(21, 3, 6);  // OUT18
+	expectLocation(23, 4, 2);  // OUT20
+	expectLocation(24, 5, 0);  // OUT21
+	expectLocation(31, 6, 6);  // OUT28
+
+	EXPECT_FALSE(l9779GetDiagLocation(11).supported()); // OUT8 does not exist
+	EXPECT_FALSE(l9779GetDiagLocation(22).supported()); // OUT19 does not exist
+	EXPECT_FALSE(l9779GetDiagLocation(32).supported()); // MRD has no diagnosis
+}
+
+TEST(L9779Spi, DecodesDiagnosisAndResetCause) {
+	EXPECT_EQ(L9779DiagResult::ShortToGround, l9779DecodeDiagField(0));
+	EXPECT_EQ(L9779DiagResult::OpenLoad, l9779DecodeDiagField(1));
+	EXPECT_EQ(L9779DiagResult::ShortToBattery, l9779DecodeDiagField(2));
+	EXPECT_EQ(L9779DiagResult::Ok, l9779DecodeDiagField(3));
+
+	EXPECT_TRUE(l9779Dia10HasOutDis(L9779_DIA10_OUT_DIS));
+	EXPECT_TRUE(l9779Dia10LostConfiguration(L9779_DIA10_TNL_RST));
+	EXPECT_TRUE(l9779Dia10LostConfiguration(L9779_DIA10_CRK_RST));
+	EXPECT_TRUE(l9779Dia10LostConfiguration(L9779_DIA10_OV_RST));
+	EXPECT_FALSE(l9779Dia10LostConfiguration(L9779_DIA10_F1 | L9779_DIA10_F2));
+	EXPECT_FALSE(l9779Dia10LostConfiguration(L9779_DIA10_VDD5_OV | L9779_DIA10_V3V3_UV));
+}
+
+TEST(L9779Spi, FullAdaptiveVrsConfigurationEnablesAdaptiveFilter) {
+	constexpr L9779VrsConfiguration config = l9779FullAdaptiveVrsConfiguration();
+
+	EXPECT_EQ(0x02, config.config1);
+	EXPECT_EQ(0xd8, config.config5);
+	EXPECT_NE(0, config.config1 & 0x02); // Full-adaptive mode.
+	EXPECT_EQ(0x18, config.config5 & 0x18); // Adaptive hysteresis and filter.
+	EXPECT_EQ(0x00, config.config5 & 0x07); // 17 uA hysteresis floor.
+	EXPECT_EQ(0x00, config.config5 & 0x20); // VRS diagnosis remains disabled.
+}
+
+TEST(L9779Spi, WatchdogResponsesMatchDatasheetVectors) {
+	const uint8_t expected[16][4] = {
+		{0xff, 0x0f, 0xf0, 0x00}, {0xb0, 0x40, 0xbf, 0x4f},
+		{0xe9, 0x19, 0xe6, 0x16}, {0xa6, 0x56, 0xa9, 0x59},
+		{0x75, 0x85, 0x7a, 0x8a}, {0x3a, 0xca, 0x35, 0xc5},
+		{0x63, 0x93, 0x6c, 0x9c}, {0x2c, 0xdc, 0x23, 0xd3},
+		{0xd2, 0x22, 0xdd, 0x2d}, {0x9d, 0x6d, 0x92, 0x62},
+		{0xc4, 0x34, 0xcb, 0x3b}, {0x8b, 0x7b, 0x84, 0x74},
+		{0x58, 0xa8, 0x57, 0xa7}, {0x17, 0xe7, 0x18, 0xe8},
+		{0x4e, 0xbe, 0x41, 0xb1}, {0x01, 0xf1, 0x0e, 0xfe},
+	};
+
+	for (size_t question = 0; question < 16; question++) {
+		for (size_t byte = 0; byte < 4; byte++) {
+			EXPECT_EQ(expected[question][byte], L9779_WDA_RESPONSES[question][byte]);
+		}
+	}
+}
+
+TEST(L9779Spi, WatchdogStatusAndTimingPolicy) {
+	constexpr L9779WdaStatus status = l9779DecodeWdaStatus(0xd9);
+	EXPECT_EQ(9, status.question);
+	EXPECT_EQ(5, status.errorCount);
+	EXPECT_TRUE(status.interrupt);
+
+	EXPECT_TRUE(l9779WdaResponseCounterAligned(0xc0));
+	EXPECT_FALSE(l9779WdaResponseCounterAligned(0x80));
+	EXPECT_EQ(22, l9779AdjustWdaDelay(27, 0x02)); // Late.
+	EXPECT_EQ(32, l9779AdjustWdaDelay(27, 0x01)); // Early.
+	EXPECT_EQ(22, l9779AdjustWdaDelay(27, 0x03)); // Late wins.
+	EXPECT_EQ(17, l9779AdjustWdaDelay(17, 0x02));
+	EXPECT_EQ(38, l9779AdjustWdaDelay(38, 0x01));
 }

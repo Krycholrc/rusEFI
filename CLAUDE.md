@@ -34,6 +34,8 @@ Outputs are placed in `firmware/deliver/`:
 
 Firmware and unit-test builds keep dependency files in `firmware/.dep/` and `unit_tests/.dep/` (separate from the object dirs). After a source file is moved or deleted (e.g. a controller promoted into `controllers/modules/`), incremental builds fail with `No rule to make target '<old path>.cpp'` until the stale `.dep` is removed - `make clean` or `rm -rf .dep` fixes it; wiping only `build/obj` does not. Also note the first build after such a wipe can measure several KB larger than an identical follow-up build - for flash-size comparisons, compare consecutive rebuilds of each variant, never a single post-wipe build. `firmware/bin/compile.sh` has been observed to exit 0 even when the underlying `make` failed - check the log (or that `build/rusefi.elf` got a new timestamp), not just the exit code.
 
+After ChibiOS build-rule changes, validate generated-header dependencies with an empty `DEPDIR` (a fresh directory under `/tmp` is sufficient). Existing compiler-generated `.dep` files can hide missing explicit Makefile prerequisites: an incremental build generates the RAM disk correctly while a clean CI build compiles against its checked-in placeholder header.
+
 ### Unit Tests
 
 ```bash
@@ -79,6 +81,8 @@ Unit tests use Google Test and run on PC, not on the ECU.
 When testing actuator init paths, remember that `EngineTestHelper` construction already runs `commonInitEngineController()` -> `initElectronicThrottle()`: with `TEST_ENGINE` (which defaults `etbFunctions[0]=DC_Wastegate`) DC hardware pool slot 0 is started *before* the test body runs, and the `DcHardware::isStarted` latch silently ignores any re-init with different settings. Call `resetDcHardwareForUnitTest()` / `resetIdleHardwareForUnitTest()` (both `EFI_UNIT_TEST` seams; also invoked by the `EngineTestHelper` constructor for cross-test isolation) before re-initializing with test-specific config. The idle stepper stack (`initIdleHardware()`, `StepDirectionStepper`, `DualHBridgeStepper`) compiles in unit tests; in that build `StepperMotor` is an alias of `StepperMotorBase` with no thread — tests drive it by calling `doIteration()` manually (see `test_idle_hardware.cpp`).
 
 #### Troubleshooting test output
+
+Starter tests must explicitly clear `enginePins.starterControl` in setup and cleanup. `EngineTestHelper` resets injector/coil outputs and pin registrations, but an unassigned starter retains its logical output across tests; the next `doStartCranking()` then sees an already-engaged starter and skips new-engagement behavior.
 
 To inspect what a test actually scheduled/executed (events, timings, sniffer/logic traces) call `setUnitTestCreateLogs(true)` (declared in `unit_tests/test-framework/engine_test_helper.h`) before constructing `EngineTestHelper` — typically from `main.cpp` or at the top of an individual test. When enabled, each test writes per-test artifacts (e.g. `unittest_<Suite>_<Name>_trace.json`, logic-data, and engine-sniffer files) into the `unit_tests/test_results/` directory (`TEST_RESULTS_DIR` in `unit_test_logger.h`); the absolute path is printed at process exit by `sayByeBye()`. This is the recommended way to diagnose unexpected scheduler/RPM/injection behavior instead of adding ad-hoc `printf`s.
 
@@ -134,6 +138,7 @@ firmware/gen_enum_to_string.sh
 - `firmware/hw_layer/` - Hardware abstraction layer
   - `ports/at32/` (Artery AT32F435) is not used at the moment: both AT32 boards (`at_start_f435`, `m74_9`) are disabled (`meta-info.disabled_env`), so no CI build exercises this port
   - AT32 uses STM32-named compatibility headers, but those names do not establish register semantics. For example, Artery CRM_CTRLSTS bit 25 is reserved even though the compatibility header defines RCC_CSR_BORRSTF there. Check the official Artery register layout before porting STM32 low-level code.
+  - AT32 RTC backup registers are separate from backup SRAM: `EFI_BACKUP_SRAM=FALSE` does not mean the chip lacks RTC backup registers. Artery's AT32F435/437 SDK places ERTC at 0x40002800 and its twenty 32-bit data registers at offsets 0x50..0x9C, matching the compatibility header's RTC/BKP registers. This permits reuse of the STM32 `backupRamLoad`/`backupRamSave` implementation; the STM32 backup-SRAM object remains excluded on AT32. Persistence across actual power loss still depends on board backup power and clock configuration.
   - The AT32 ChibiOS port uses the older SPI API (`end_cb`) even with newer ChibiOS RT configuration versions: its hal_lld.h does not select HAL_LLD_SELECT_SPI_V2. Do not infer SPIConfig fields solely from the RT version.
 - `firmware/libfirmware/` - Reusable library code
 - `firmware/util/` - Self-contained utilities (no external dependencies)

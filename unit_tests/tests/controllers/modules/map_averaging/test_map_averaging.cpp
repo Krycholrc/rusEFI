@@ -8,9 +8,69 @@
 #include "pch.h"
 #include "map_averaging.h"
 #include "harley.h"
+#include "linear_func.h"
 
 namespace {
 	auto const startAveragingAction{ action_s::make<startAveraging>((mapSampler*){}) };
+}
+
+TEST(MapAveragingAdc, BeforeConverterInitialization) {
+	EngineTestHelper eth(engine_type_e::TEST_CRANK_ENGINE);
+	MapAverager sensor(SensorType::MapFast, MS2NT(200));
+
+	// A healthy N52 key-on voltage arrives before initMap attaches the converter.
+	sensor.onAdcSample(0.74f, true);
+	EXPECT_EQ(0, eth.getWarningCounter());
+	EXPECT_FALSE(engine->engineState.warnings.isWarningNow(ObdCode::CUSTOM_INSTANT_MAP_DECODING));
+	EXPECT_FALSE(engine->outputChannels.isMapValid);
+	EXPECT_FLOAT_EQ(0, engine->outputChannels.instantMAPValue);
+
+	LinearFunc converter;
+	converter.configure(4.5f, 0, 0.7f, 100, 5, 410);
+	sensor.setFunction(converter);
+	sensor.onAdcSample(0.74f, true);
+	EXPECT_EQ(0, eth.getWarningCounter());
+	EXPECT_TRUE(engine->outputChannels.isMapValid);
+	EXPECT_NEAR(98.947f, engine->outputChannels.instantMAPValue, 0.04f);
+}
+
+TEST(MapAveragingAdc, BeforeChannelInitialization) {
+	EngineTestHelper eth(engine_type_e::TEST_CRANK_ENGINE);
+	MapAverager sensor(SensorType::MapFast, MS2NT(200));
+	LinearFunc converter;
+	converter.configure(4.5f, 0, 0.7f, 100, 5, 410);
+	sensor.setFunction(converter);
+
+	// Neither a plausible voltage from an unselected channel nor an invalid
+	// voltage should be treated as a MAP reading until its token is ready.
+	sensor.onAdcSample(0.74f, false);
+	EXPECT_FALSE(engine->outputChannels.isMapValid);
+	EXPECT_FLOAT_EQ(0, engine->outputChannels.instantMAPValue);
+	sensor.onAdcSample(4.5f, false);
+	EXPECT_EQ(0, eth.getWarningCounter());
+	EXPECT_FALSE(engine->engineState.warnings.isWarningNow(ObdCode::CUSTOM_INSTANT_MAP_DECODING));
+
+	sensor.onAdcSample(0.74f, true);
+	EXPECT_EQ(0, eth.getWarningCounter());
+	EXPECT_TRUE(engine->outputChannels.isMapValid);
+	EXPECT_NEAR(98.947f, engine->outputChannels.instantMAPValue, 0.04f);
+}
+
+TEST(MapAveragingAdc, InvalidVoltageAfterInitialization) {
+	EngineTestHelper eth(engine_type_e::TEST_CRANK_ENGINE);
+	MapAverager sensor(SensorType::MapFast, MS2NT(200));
+	LinearFunc converter;
+	converter.configure(4.5f, 0, 0.7f, 100, 5, 410);
+	sensor.setFunction(converter);
+
+	// Readiness must not suppress real faults with a stopped engine or with
+	// crank-synchronous averaging disabled.
+	engineConfiguration->isMapAveragingEnabled = false;
+	sensor.onAdcSample(4.5f, true);
+	EXPECT_EQ(1, eth.getWarningCounter());
+	EXPECT_TRUE(engine->engineState.warnings.isWarningNow(ObdCode::CUSTOM_INSTANT_MAP_DECODING));
+	EXPECT_FALSE(engine->outputChannels.isMapValid);
+	EXPECT_FLOAT_EQ(0, engine->outputChannels.instantMAPValue);
 }
 
 TEST(EngineModules, MapAveragingModule_onEnginePhase) {

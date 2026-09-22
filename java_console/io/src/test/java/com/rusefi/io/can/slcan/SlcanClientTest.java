@@ -34,26 +34,48 @@ public class SlcanClientTest {
     }
 
     @Test
-    public void explicitStreamInitializesAndClosesLogicalChannel() throws Exception {
+    public void requestedPortRecoversBeforeVersionProbeWithoutBinaryProbe() throws Exception {
         FakeStream stream = new FakeStream();
-        try (SlcanClient client = SlcanClient.connect(stream, "COM42", line -> {})) {
+        // If a TunerStudio binary probe were attempted, this stream would identify as a console.
+        stream.console = true;
+        // Reproduce a USB CDC reply lag: C first consumes an old V response, while C's own bell
+        // is delivered immediately before the new V response.
+        stream.buffer.addData("V0000\r".getBytes(StandardCharsets.US_ASCII));
+        stream.deferCloseReplyUntilNextCommand = true;
+        try (SlcanClient client = SlcanClient.connectExplicit(stream, "COM42", line -> {})) {
             assertEquals("COM42", client.getPort());
             assertEquals("V1220", client.getVersion());
-            assertEquals(Arrays.asList("V", "C", "S6", "I", "O"), stream.commands);
-            assertTrue(client.includesBus());
+            assertEquals(0, stream.binaryProbeAttempts);
+            assertEquals(initializationCommands(), stream.commands);
             client.pollStatus();
-            assertEquals("F00", client.readLine(10));
+            String response;
+            do {
+                response = client.readLine(10);
+            } while (response != null && response.startsWith("V"));
+            assertEquals("F00", response);
         }
-        assertEquals(Arrays.asList("V", "C", "S6", "I", "O", "F", "C"), stream.commands);
+        List<String> expected = initializationCommands();
+        expected.add("F");
+        expected.add("C");
+        assertEquals(expected, stream.commands);
         assertTrue(stream.isClosed());
+    }
+
+    @Test
+    public void autoDiscoveryStillProbesForConsole() throws Exception {
+        FakeStream stream = new FakeStream();
+        try (SlcanClient client = SlcanClient.connect(stream, "COM42", line -> {})) {
+            assertEquals(1, stream.binaryProbeAttempts);
+            assertEquals(Arrays.asList("V", "C", "S6", "O"), stream.commands);
+        }
     }
 
     @Test
     public void initializationFailureClosesPort() {
         FakeStream stream = new FakeStream();
         stream.rejectOpen = true;
-        assertThrows(IOException.class, () -> SlcanClient.connect(stream, "COM42", line -> {}));
-        assertEquals(Arrays.asList("V", "C", "S6", "I", "O"), stream.commands);
+        assertThrows(IOException.class, () -> SlcanClient.connectExplicit(stream, "COM42", line -> {}));
+        assertEquals(initializationCommands(), stream.commands);
         assertTrue(stream.isClosed());
     }
 
@@ -71,7 +93,7 @@ public class SlcanClientTest {
         for (int bus = 0; bus < 3; bus++) {
             String prefix = new String[]{"", "&", "$"}[bus];
             for (String frame : new String[]{"t1232AABB", "T000001232AABB", "r1238", "R000001238"}) {
-                SlcanClient.Frame parsed = SlcanClient.Frame.parse(prefix + frame + "ABCD", true);
+                SlcanClient.Frame parsed = SlcanClient.Frame.parse(prefix + frame + "ABCD");
                 assertNotNull(parsed);
                 assertEquals(Integer.valueOf(bus), parsed.busIndex);
                 assertEquals(prefix + frame + "ABCD", parsed.raw);
@@ -81,8 +103,7 @@ public class SlcanClientTest {
             }
         }
         SlcanClient.Frame legacy = SlcanClient.Frame.parse("t1232AABB");
-        assertNull(legacy.busIndex);
-        assertTrue(legacy.decode().startsWith("Bus unknown "));
+        assertEquals(Integer.valueOf(0), legacy.busIndex);
         assertEquals(Integer.valueOf(1), SlcanClient.Frame.parse("&t1230").busIndex);
         assertEquals(Integer.valueOf(2), SlcanClient.Frame.parse("$t1230").busIndex);
         for (String bad : new String[]{"&", "$", "&&t1230", "$&t1230", "&V1220", "$t1232AA"}) {
@@ -90,16 +111,12 @@ public class SlcanClientTest {
         }
     }
 
-    @Test
-    public void legacyAndOldFirmwareKeepUnknownBus() throws Exception {
-        for (String reply : new String[]{"I0\r", "\u0007", null}) {
-            FakeStream stream = new FakeStream();
-            stream.formatReply = reply;
-            try (SlcanClient client = SlcanClient.connect(stream, "COM42", line -> {})) {
-                assertFalse(client.includesBus());
-                assertNull(SlcanClient.Frame.parse("t1230", client.includesBus()).busIndex);
-            }
+    private static List<String> initializationCommands() {
+        List<String> commands = new ArrayList<>(Arrays.asList("C", "V", "S6", "O"));
+        for (int i = 0; i < 12; i++) {
+            commands.add("V");
         }
+        return commands;
     }
 
     private static class FakeStream extends AbstractIoStream {
@@ -107,6 +124,9 @@ public class SlcanClientTest {
         final List<String> commands = new ArrayList<>();
         boolean console;
         boolean rejectOpen;
+        boolean deferCloseReplyUntilNextCommand;
+        byte[] deferredReply;
+        int binaryProbeAttempts;
         String formatReply = "I1\r";
 
         @Override
@@ -118,6 +138,7 @@ public class SlcanClientTest {
         @Override
         public void write(byte[] bytes) throws IOException {
             if (bytes[0] == 0) {
+                binaryProbeAttempts++;
                 if (console) {
                     buffer.addData(IoHelper.makeCrc32Packet(
                             "\u0000rusEFI test".getBytes(StandardCharsets.US_ASCII)));
@@ -127,6 +148,10 @@ public class SlcanClientTest {
             }
             String command = new String(bytes, StandardCharsets.US_ASCII).trim();
             commands.add(command);
+            if (deferredReply != null) {
+                buffer.addData(deferredReply);
+                deferredReply = null;
+            }
             if ("I".equals(command)) {
                 if (formatReply != null) {
                     buffer.addData(formatReply.getBytes(StandardCharsets.US_ASCII));
@@ -136,6 +161,11 @@ public class SlcanClientTest {
             String reply = "V".equals(command) ? "V1220\r"
                     : "F".equals(command) ? "F00\r"
                     : rejectOpen && "O".equals(command) ? "\u0007" : "\r";
+            if (deferCloseReplyUntilNextCommand && "C".equals(command)) {
+                deferCloseReplyUntilNextCommand = false;
+                deferredReply = reply.getBytes(StandardCharsets.US_ASCII);
+                return;
+            }
             buffer.addData(reply.getBytes(StandardCharsets.US_ASCII));
         }
     }
