@@ -21,7 +21,6 @@
 #define ts_show_vbatt true
 #define ts_show_clt_iat_pullup false
 #define ts_show_sync_cam true
-#define ts_show_tcu false
 #define ts_show_gdi false
 #define ts_show_sent false
 #define ts_show_bank2_cam1 false
@@ -34,7 +33,6 @@
 #define ts_show_ford_toyota_tps_pps false
 #define ts_show_speedo_settings false
 #define ts_show_starter_disable false
-#define ts_show_alternator false
 #define ts_show_status_leds false
 #define ts_show_experimental false
 #define ts_show_vvt_output false
