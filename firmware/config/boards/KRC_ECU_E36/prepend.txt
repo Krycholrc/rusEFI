@@ -1,4 +1,3 @@
-#define show_test_presets true
 #define ts_show_full_pinout false
 #define ts_show_egt true
 #define ts_show_etb true
@@ -17,7 +16,6 @@
 #define ts_show_software_knock true
 #define ts_show_hardware_simulator false
 #define ts_show_idle_hardware false
-#define ts_show_rotational_idle_s false
 #define ts_show_vbatt true
 #define ts_show_clt_iat_pullup false
 #define ts_show_sync_cam true
@@ -39,16 +37,11 @@
 #define ts_show_vvt_output false
 #define ts_show_ign_key_menu false
 #define ts_show_ecu_stimulator false
-#define ts_show_live_data true
 #define ts_show_analog_o2 false
 #define ts_show_dc_hardware false
 #define ts_show_hbridge_function true
 #define ts_show_staged_injection false
 #define ts_show_onboard_accelerometer false
-#define ts_show_console_settings false 
-#define ts_show_canbus_sniffer true
-#define ts_show_fan2_settings false
-#define ts_ecu_locking false
 #define ts_show_alternator false
 #define ts_show_cylinder_7 false
 #define ts_show_cylinder_8 false
