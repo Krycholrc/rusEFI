@@ -45,6 +45,10 @@
 #define ts_show_hbridge_function true
 #define ts_show_staged_injection false
 #define ts_show_onboard_accelerometer false
+#define ts_show_console_settings false 
+#define ts_show_canbus_sniffer true
+#define ts_show_fan2_settings false
+#define ts_ecu_locking false
 #define ts_show_alternator false
 #define ts_show_cylinder_7 false
 #define ts_show_cylinder_8 false
