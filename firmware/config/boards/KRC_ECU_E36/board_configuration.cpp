@@ -93,5 +93,6 @@ static void KRC_ECU_E36_boardDefaultConfiguration() {
 }
 
 void setup_custom_board_overrides() {
-	custom_board_ConfigOverrides = KRC_ECU_E36_boardDefaultConfiguration;
+	custom_board_ConfigOverrides = KRC_ECU_E36_BoardConfigOverrides;
+  custom_board_DefaultConfiguration = KRC_ECU_E36_boardDefaultConfiguration;
 }
