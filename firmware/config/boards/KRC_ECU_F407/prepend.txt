@@ -21,6 +21,7 @@
 #define ts_show_tcu false
 #define ts_show_gdi false
 #define ts_show_sent false
+#define ts_show_ign_key_menu false
 #define ts_show_stepper_hbridge false
 #define ts_show_stepper_push_pull false
 #define ts_show_ecu_stimulator true
