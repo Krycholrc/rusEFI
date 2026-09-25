@@ -3,7 +3,6 @@ BOARDCPPSRC =  $(BOARD_DIR)/board_configuration.cpp
 include $(BOARD_DIR)/meta-info.env
 
 DDEFS += -DFIRMWARE_ID=\"KRC_ECU_E36\"
-DDEFS += -DFIRMWARE_ID=\"stm32f429\"
 IS_STM32F429 = yes
 
 DDEFS += -DSTM32_ADC_USE_ADC3=TRUE
