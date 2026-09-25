@@ -14,7 +14,7 @@
 #define ts_show_rotary false
 #define ts_show_popular_vehicles false
 #define ts_show_software_knock true
-#define ts_show_hardware_simulator false
+#define ts_show_hardware_simulator true
 #define ts_show_idle_hardware false
 #define ts_show_vbatt true
 #define ts_show_clt_iat_pullup false
