@@ -36,7 +36,7 @@
 #define ts_show_experimental false
 #define ts_show_vvt_output false
 #define ts_show_ign_key_menu false
-#define ts_show_ecu_stimulator false
+#define ts_show_ecu_stimulator true
 #define ts_show_analog_o2 false
 #define ts_show_dc_hardware false
 #define ts_show_hbridge_function true
