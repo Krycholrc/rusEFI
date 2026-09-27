@@ -23,7 +23,7 @@ static void KRC_ECU_MS43_boardDefaultConfiguration() {
 	//Input pin
 	engineConfiguration->triggerInputPins[0] = Gpio::D3;
 	engineConfiguration->camInputs[0] = Gpio::D4;
-        engineConfiguration->camInputs[1] = Gpio::D5;
+  engineConfiguration->camInputs[1] = Gpio::D5;
 
 	// Idle configuration
   engineConfiguration->useStepperIdle = false;
@@ -83,10 +83,10 @@ static void KRC_ECU_MS43_boardDefaultConfiguration() {
 	engineConfiguration->canSleepPeriodMs = 50;
 	engineConfiguration->canBaudRate = B500KBPS;
 
-        //CAN2 bus overwrites
-	engineConfiguration->can2TxPin = Gpio::B6;
-	engineConfiguration->can2RxPin = Gpio::B5;
-	engineConfiguration->can2BaudRate = B500KBPS;
+  //CAN2 bus overwrites
+	//engineConfiguration->can2TxPin = Gpio::B6;
+	//engineConfiguration->can2RxPin = Gpio::B5;
+	//engineConfiguration->can2BaudRate = B500KBPS;
 	
 	
 	//Engine configuration
