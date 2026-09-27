@@ -84,9 +84,9 @@ static void KRC_ECU_MS43_boardDefaultConfiguration() {
 	engineConfiguration->canBaudRate = B500KBPS;
 
   //CAN2 bus overwrites
-	//engineConfiguration->can2TxPin = Gpio::B6;
-	//engineConfiguration->can2RxPin = Gpio::B5;
-	//engineConfiguration->can2BaudRate = B500KBPS;
+	engineConfiguration->can2TxPin = Gpio::B6;
+	engineConfiguration->can2RxPin = Gpio::B5;
+	engineConfiguration->can2BaudRate = B500KBPS;
 	
 	
 	//Engine configuration
