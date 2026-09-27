@@ -23,6 +23,14 @@ pins:
     class: outputs
     ts_name: IGN6
 
+  - id: D14
+    class: outputs
+    ts_name: DISA
+
+  - id: D15
+    class: outputs
+    ts_name: THERM
+
   - id: E0
     class: outputs
     ts_name: INJ1
@@ -49,11 +57,11 @@ pins:
 
   - id: E6
     class: outputs
-    ts_name: DISA
+    ts_name: VANOS_IN
 
   - id: E7
     class: outputs
-    ts_name: THERM
+    ts_name: VANOS_EX
 
   - id: E10
     class: outputs
@@ -151,16 +159,16 @@ pins:
     class: analog_inputs
     ts_name: AUX_AIN
 
-  - id: [D3, D3]
-    class: [switch_inputs, event_inputs]
+  - id: D3
+    class: event_inputs
     ts_name: CRANK
 
-  - id: [D4, D4]
-    class: [switch_inputs, event_inputs]
+  - id: D4
+    class: event_inputs
     ts_name: CAM_IN
 
-  - id: [D5, D5]
-    class: [switch_inputs, event_inputs]
+  - id: D5
+    class: event_inputs
     ts_name: CAM_EX
 
   - id: [E12, E12]
@@ -171,14 +179,14 @@ pins:
     class: [switch_inputs, event_inputs]
     ts_name: AUX_DIN2
 
-  - id: [E14, E14]
-    class: [switch_inputs, event_inputs]
+  - id: E14
+    class: switch_inputs
     ts_name: BRAKE
 
-  - id: [E15, E15]
-    class: [switch_inputs, event_inputs]
+  - id: E15
+    class: switch_inputs
     ts_name: BRAKE2
 
-  - id: [C9, C9]
-    class: [switch_inputs, event_inputs]
+  - id: C9
+    class: switch_inputs
     ts_name: CLUTCH
