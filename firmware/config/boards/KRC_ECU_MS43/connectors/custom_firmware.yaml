@@ -131,6 +131,10 @@ pins:
     class: analog_inputs
     ts_name: MAP_INT
 
+  - id: EFI_ADC_14
+    class: analog_inputs
+    ts_name: PPS1
+
   - id: EFI_ADC_6
     class: analog_inputs
     ts_name: PPS2
@@ -150,10 +154,6 @@ pins:
   - id: EFI_ADC_13
     class: analog_inputs
     ts_name: OIL_TEMP
-
-  - id: EFI_ADC_14
-    class: analog_inputs
-    ts_name: PPS1
 
   - id: EFI_ADC_15
     class: analog_inputs
