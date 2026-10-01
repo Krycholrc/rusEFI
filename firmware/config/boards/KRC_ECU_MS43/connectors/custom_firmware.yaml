@@ -101,7 +101,7 @@ pins:
 
   - id: B4
     class: outputs
-    ts_name: SPARE
+    ts_name: EXHAUST_FLAP
 
   - id: A8
     class: outputs
