@@ -53,4 +53,8 @@ public enum live_data_e {
 	LDS_vvl_controller_state,
 	LDS_live_data_rotational_idle,
 	LDS_injector_deadtime_autotune_state,
+	LDS_rolling_launch_state,
+	LDS_burst_knock_state,
+	LDS_engine_state_machine_state,
+	LDS_wot_enrichment_state,
 }

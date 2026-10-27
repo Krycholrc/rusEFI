@@ -261,7 +261,8 @@ public interface ISensorHolder {
         if (field instanceof ScalarIniField) {
             ScalarIniField scalarField = (ScalarIniField) field;
             double rawValue = scalarField.getType().readRawValue(bb);
-            return rawValue * scalarField.getMultiplier();
+            // TunerStudio: userValue = (raw + translate) * scale
+            return (rawValue + scalarField.getSerializationOffset()) * scalarField.getMultiplier();
         } else if (field instanceof EnumIniField) {
             EnumIniField enumField = (EnumIniField) field;
             int rawValue = (int) enumField.getType().readRawValue(bb);
@@ -333,8 +334,10 @@ public interface ISensorHolder {
 
             if (resolvedTitle != null || resolvedUnits != null) {
                 result.put(e.getKey(), new ResolvedGaugeLabels(
-                    resolvedTitle != null ? resolvedTitle : gauge.getTitle(),
-                    resolvedUnits != null ? resolvedUnits : gauge.getUnits()
+                    TsStringFunction.containsStringFunction(gauge.getTitle())
+                        ? (resolvedTitle != null ? resolvedTitle : "") : gauge.getTitle(),
+                    TsStringFunction.containsStringFunction(gauge.getUnits())
+                        ? (resolvedUnits != null ? resolvedUnits : "") : gauge.getUnits()
                 ));
             }
         }

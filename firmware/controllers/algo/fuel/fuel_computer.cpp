@@ -25,6 +25,12 @@ mass_t FuelComputerBase::getCycleFuel(mass_t airmass, float rpm, float load) {
 	float stoich = getStoichiometricRatio();
 	float lambda = getTargetLambda(rpm, load);
 	float afr = stoich * lambda;
+	// Time at WOT changes the AFR target, including the published lambda used by STFT.
+	float adjustedAfr = afr + engine->module<WotEnrichment>().unmock().getAfrAdder();
+	if (std::isfinite(adjustedAfr) && adjustedAfr > 0) {
+		afr = adjustedAfr;
+		lambda = afr / stoich;
+	}
 
 	afrTableYAxis = load;
 	targetLambda = lambda;
@@ -45,8 +51,9 @@ float FuelComputer::getStoichiometricRatio() const {
 		return 0;
 	}
 
-	// Without an ethanol/flex sensor, return primary configured stoich ratio
-	if (!Sensor::hasSensor(SensorType::FuelEthanolPercent)) {
+	// A missing or invalid ethanol reading cannot select the secondary fuel.
+	auto flex = Sensor::get(SensorType::FuelEthanolPercent);
+	if (!flex) {
 		return primary;
 	}
 
@@ -58,10 +65,6 @@ float FuelComputer::getStoichiometricRatio() const {
 		criticalError("Please set E100 stoichiometric ratio");
 		return 0;
 	}
-
-	auto flex = Sensor::get(SensorType::FuelEthanolPercent);
-
-	// TODO: what do do if flex sensor fails?
 
 	// Linear interpolate between primary and secondary stoich ratios
 	return interpolateClamped(0, primary, 100, secondary, flex.Value);

@@ -86,12 +86,18 @@ public class SlcanTab {
     private final JButton stopButton = new JButton("Stop");
     private final Consumer<String> messageHandler;
     private final UIContext uiContext;
+    private final List<Consumer<ConfigurationImage>> configImageListeners = new ArrayList<>();
 
     public SlcanTab(UIContext uiContext) {
         this(uiContext, null);
     }
 
     public SlcanTab(UIContext uiContext, Consumer<String> messageHandler) {
+        this(uiContext, messageHandler, true);
+    }
+
+    // Lifecycle tests build the real controls without scanning hardware or starting the UI timer.
+    SlcanTab(UIContext uiContext, Consumer<String> messageHandler, boolean startBackgroundWork) {
         this.uiContext = uiContext;
         this.messageHandler = messageHandler != null
             ? messageHandler
@@ -145,11 +151,13 @@ public class SlcanTab {
         });
 
         refreshTimer = new Timer(250, e -> refresh());
-        refreshTimer.start();
 
         reader = new Thread(this::readerLoop, "SLCAN tab reader");
         reader.setDaemon(true);
-        reader.start();
+        if (startBackgroundWork) {
+            refreshTimer.start();
+            reader.start();
+        }
     }
 
     public JPanel getContent() {
@@ -162,6 +170,10 @@ public class SlcanTab {
         recording = false;
         refreshTimer.stop();
         reader.interrupt();
+        for (Consumer<ConfigurationImage> listener : configImageListeners) {
+            uiContext.removeConfigImageListener(listener);
+        }
+        configImageListeners.clear();
     }
 
     private void readerLoop() {
@@ -285,9 +297,9 @@ public class SlcanTab {
 
             JCheckBox cb = new JCheckBox(busName);
 
-            uiContext.addConfigImageListener(image -> {
-                updateCheckbox(cb, fieldName1, fieldName2, ini, image);
-            });
+            Consumer<ConfigurationImage> listener = image -> updateCheckbox(cb, fieldName1, fieldName2, ini, image);
+            configImageListeners.add(listener);
+            uiContext.addConfigImageListener(listener);
 
             // Initial state
             BinaryProtocol bp = uiContext.getBinaryProtocol();

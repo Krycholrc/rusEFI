@@ -9,6 +9,9 @@
 
 #include "unit_test_logger.h"
 #include "msl_to_csv.h"
+#include "binary_mlg_logging.h"
+#include "mlg_field.h"
+#include "value_lookup.h"
 
 #include <cstdio>
 #include <filesystem>
@@ -18,6 +21,26 @@
 #include <vector>
 
 namespace {
+
+class CaptureWriter : public Writer {
+public:
+	std::string bytes;
+	size_t write(const char* buffer, size_t count) override {
+		bytes.append(buffer, count);
+		return count;
+	}
+	size_t flush() override { return 0; }
+};
+
+float readFloatBE(const char* bytes) {
+	uint32_t bits = 0;
+	for (size_t i = 0; i < sizeof(bits); i++) {
+		bits = (bits << 8) | static_cast<unsigned char>(bytes[i]);
+	}
+	float result;
+	memcpy(&result, &bits, sizeof(result));
+	return result;
+}
 
 std::string makeArtifactPath(const std::string& suffix) {
 	auto testInfo = ::testing::UnitTest::GetInstance()->current_test_info();
@@ -43,6 +66,169 @@ std::string readFirstLine(const std::string& path) {
 } // namespace
 
 extern bool useNdJSONFiles;
+
+TEST(unitTestLog, binaryHeaderMatchesEmittedRecord) {
+	EngineTestHelper eth(engine_type_e::TEST_ENGINE);
+	CaptureWriter header;
+	MLG::writeFileHeader(header);
+	CaptureWriter record;
+	MLG::writeSdBlock(record);
+	ASSERT_GE(header.bytes.size(), 24u);
+	ASSERT_GE(record.bytes.size(), 5u);
+	auto readUnsignedBE = [&](size_t offset, size_t size) {
+		size_t value = 0;
+		for (size_t i = 0; i < size; i++) {
+			value = (value << 8) | static_cast<unsigned char>(header.bytes[offset + i]);
+		}
+		return value;
+	};
+	// Decode the wire header independently, including bytes with their high bit set.
+	EXPECT_EQ(header.bytes.size(), readUnsignedBE(16, 4));
+	// A data block has a four-byte prefix and a one-byte checksum outside the payload.
+	EXPECT_EQ(record.bytes.size() - 5, readUnsignedBE(20, 2));
+	EXPECT_EQ((header.bytes.size() - 24) / 89, readUnsignedBE(22, 2));
+}
+
+TEST(unitTestLog, generatedEnumFieldsContainCurrentValues) {
+	EngineTestHelper eth(engine_type_e::TEST_ENGINE);
+	auto& stft = engine->module<ShortTermFuelTrim>().unmock();
+	stft.stftCorrectionBinIdx = ftRegionPower;
+	stft.stftCorrectionState = stftDisabledRPM;
+	stft.stftLearningState[0] = stftDisabledLaunch;
+
+	CaptureWriter record;
+	MLG::writeSdBlock(record);
+	size_t offset = 4;
+	int matches = 0;
+	MLG::forEachField([&](const MLG::Entries::Field& field) {
+		const std::string name(field.getName());
+		int expected = -1;
+		if (name == "STFT: used bin") expected = ftRegionPower;
+		if (name == "STFT: stftCorrectionState") expected = stftDisabledRPM;
+		if (name == "STFT: stftLearningState 1") expected = stftDisabledLaunch;
+		if (expected >= 0) {
+			matches++;
+			ASSERT_EQ(1u, field.getSize()) << name;
+			EXPECT_EQ(static_cast<uint8_t>(MLG::Types::Field::Scalar::U08), field.getTypeId()) << name;
+			ASSERT_LT(offset, record.bytes.size());
+			EXPECT_EQ(expected, static_cast<uint8_t>(record.bytes[offset])) << name;
+			EXPECT_DOUBLE_EQ(expected, field.readValueAsDouble()) << name;
+		}
+		offset += field.getSize();
+	});
+	EXPECT_EQ(3, matches);
+}
+
+TEST(unitTestLog, sourcesFollowEngineAndMockReplacement) {
+	// The generated table exists before any EngineTestHelper. Reuse it across
+	// destroyed fixtures and changes to each of the four mockable sources.
+	for (int fixture = 1; fixture <= 2; fixture++) {
+		EngineTestHelper eth(engine_type_e::TEST_ENGINE);
+		ThrottleModel throttleA, throttleB;
+		HpfpController hpfpA, hpfpB;
+		AcController acA, acB;
+		MisfireController misfireA, misfireB;
+		auto seed = [](auto& throttle, auto& hpfp, auto& ac, auto& misfire, int value) {
+			throttle.throttleModelCrossoverAngle = value * 12.5f;
+			throttle.throttleUseWotModel = value % 2;
+			hpfp.fuel_requested_percent = value * 10;
+			hpfp.isHpfpActive = value % 2;
+			ac.acPressureTooHigh = value % 2;
+			misfire.misfireEmaUs = value * 1250;
+		};
+		seed(engine->module<ThrottleModel>().unmock(), engine->module<HpfpController>().unmock(),
+			 engine->module<AcController>().unmock(), engine->module<MisfireController>().unmock(), fixture);
+		seed(throttleA, hpfpA, acA, misfireA, fixture + 2);
+		seed(throttleB, hpfpB, acB, misfireB, fixture + 3);
+		engine->outputChannels.rtcUnixEpochTime = fixture * 123456;
+		for (int phase = 0; phase < 4; phase++) {
+			SCOPED_TRACE(::testing::Message() << "fixture " << fixture << " phase " << phase);
+			engine->module<ThrottleModel>().set(phase == 1 ? &throttleA : phase == 2 ? &throttleB : nullptr);
+			engine->module<HpfpController>().set(phase == 1 ? &hpfpA : phase == 2 ? &hpfpB : nullptr);
+			engine->module<AcController>().set(phase == 1 ? &acA : phase == 2 ? &acB : nullptr);
+			engine->module<MisfireController>().set(phase == 1 ? &misfireA : phase == 2 ? &misfireB : nullptr);
+			const int value = fixture + (phase == 1 ? 2 : phase == 2 ? 3 : 0);
+			CaptureWriter record;
+			MLG::writeSdBlock(record);
+			size_t offset = 4;
+			int matches = 0;
+			MLG::forEachField([&](const MLG::Entries::Field& field) {
+				const std::string name(field.getName());
+				auto expect = [&](double engineering, double raw, bool floating) {
+					matches++;
+					EXPECT_NEAR(engineering, field.readValueAsDouble(), 0.00001) << name;
+					ASSERT_LE(offset + field.getSize(), record.bytes.size());
+					if (floating) {
+						EXPECT_FLOAT_EQ(raw, readFloatBE(record.bytes.data() + offset)) << name;
+					} else {
+						uint32_t stored = 0;
+						for (size_t i = 0; i < field.getSize(); i++) {
+							stored = (stored << 8) | static_cast<unsigned char>(record.bytes[offset + i]);
+						}
+						EXPECT_EQ(raw, stored) << name;
+					}
+				};
+				if (name == "Air: Throttle crossover pos") {
+					expect(value * 12.5, value * 1250, false);
+				} else if (name == "Air: Throttle model WOT" || name == "AC: pressure too high" || name == "GDI: HPFP Active") {
+					expect(value % 2, value % 2, false);
+				} else if (name == "GDI: HPFP requested duty") {
+					expect(value * 10, value * 10, true);
+				} else if (name == "Misfire: EMA baseline") {
+					expect(value * 1.25, value * 1250, true);
+				} else if (name == "rtcUnixEpochTime") {
+					expect(fixture * 123456, fixture * 123456, false);
+				}
+				offset += field.getSize();
+			});
+			EXPECT_EQ(7, matches);
+			EXPECT_NEAR(value * 12.5, getOutputValueByName("throttleModelCrossoverAngle"), 0.00001);
+			EXPECT_FLOAT_EQ(value * 10, getOutputValueByName("fuel_requested_percent"));
+			EXPECT_FLOAT_EQ(value % 2, getOutputValueByName("acPressureTooHigh"));
+			EXPECT_NEAR(value * 1.25, getOutputValueByName("misfireEmaUs"), 0.00001);
+		}
+	}
+}
+
+TEST(unitTestLog, generatedOutputConversions) {
+	EngineTestHelper eth(engine_type_e::TEST_ENGINE);
+	auto& misfire = engine->module<MisfireController>().unmock();
+	misfire.misfireEmaUs = 1250;
+	EXPECT_NEAR(1.25, getOutputValueByName("misfireEmaUs"), 0.00001);
+	EXPECT_FLOAT_EQ(1250, misfire.misfireEmaUs);
+	CaptureWriter header;
+	MLG::writeFileHeader(header);
+	for (float raw : {0.95f, 1.0f, 1.05f}) {
+		engine->engineState.stftCorrection[0] = raw;
+		engine->engineState.stftCorrection[1] = raw;
+		engine->engineState.dwellActualRatio = raw;
+		CaptureWriter record;
+		MLG::writeSdBlock(record);
+		size_t descriptorOffset = MLG::Types::Header::Size;
+		size_t payloadOffset = 4; // Standard data-block prefix.
+		int matches = 0;
+		MLG::forEachField([&](const MLG::Entries::Field& field) {
+			std::string name(field.getName());
+			if (name == "STFT: Bank 1" || name == "STFT: Bank 2" || name == "Ignition: Dwell deviation") {
+				matches++;
+				ASSERT_LE(descriptorOffset + 89, header.bytes.size());
+				ASSERT_LE(payloadOffset + sizeof(float), record.bytes.size());
+				float scale = readFloatBE(header.bytes.data() + descriptorOffset + 46);
+				float translation = readFloatBE(header.bytes.data() + descriptorOffset + 50);
+				// [tag:live_data_output_scale] Actual generated fields must match their INI conversions.
+				EXPECT_FLOAT_EQ(100, scale) << name;
+				EXPECT_FLOAT_EQ(-1, translation) << name;
+				float stored = readFloatBE(record.bytes.data() + payloadOffset);
+				EXPECT_FLOAT_EQ(raw, stored) << name;
+				EXPECT_NEAR((raw - 1) * 100, (stored + translation) * scale, 0.00001) << name;
+			}
+			descriptorOffset += MLG::Types::Field::DescriptorSize;
+			payloadOffset += field.getSize();
+		});
+		EXPECT_EQ(3, matches);
+		EXPECT_NEAR((raw - 1) * 100, getOutputValueByName("dwellActualRatio"), 0.00001);
+	}
+}
 
 TEST(unitTestLog, ndjsonCsvAndBinaryContent) {
   bool wasUsing = useNdJSONFiles;

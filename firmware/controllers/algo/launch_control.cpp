@@ -51,9 +51,8 @@ bool LaunchControlBase::isInsideSpeedCondition() const {
 		return true; // allow launch, speed does not matter
 	}
 
-	int speed = Sensor::getOrZero(SensorType::VehicleSpeed);
-
-	return engineConfiguration->launchSpeedThreshold > speed;
+	auto speed = Sensor::get(SensorType::VehicleSpeed);
+	return speed.Valid && engineConfiguration->launchSpeedThreshold > speed.Value;
 }
 
 /**
@@ -146,6 +145,11 @@ float LaunchControlBase::getFuelCoefficient() const {
 
 void LaunchControlBase::update() {
 	if (!engineConfiguration->launchControlEnabled) {
+		isLaunchCondition = false;
+		isPreLaunchCondition = false;
+		isLaunchLatched = false;
+		activateSwitchCondition = false;
+		sparkSkipRatio = 0;
 		return;
 	}
 
@@ -210,10 +214,10 @@ void SoftSparkLimiter::updateTargetSkipRatio(
 	targetSkipRatio = luaSparkSkip;
 	if (engineConfiguration->useHardSkipInTraction) {
 		if (allowHardCut) {
-			targetSkipRatio += tractionControlSparkSkip;
+			targetSkipRatio += tractionControlSparkSkip / 100.0f;
 		}
 	} else if (!allowHardCut) {
-		targetSkipRatio += tractionControlSparkSkip;
+		targetSkipRatio += tractionControlSparkSkip / 100.0f;
 	}
 
 	if (allowHardCut) {

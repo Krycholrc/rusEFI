@@ -63,6 +63,11 @@ angle_t TriggerCentral::getVVTPosition(uint8_t bankIndex, uint8_t camIndex) {
 	return vvtPosition[bankIndex][camIndex];
 }
 
+bool TriggerCentral::isVvtPositionFresh(uint8_t bankIndex, uint8_t camIndex) const {
+	return bankIndex < BANKS_COUNT && camIndex < CAMS_PER_BANK
+		&& !vvtPositionUpdateTimer[bankIndex][camIndex].hasElapsedSec(1);
+}
+
 /**
  * @return angle since trigger synchronization point, NOT angle since TDC.
  */
@@ -153,11 +158,6 @@ angle_t TriggerCentral::syncEnginePhaseAndReport(int divider, int remainder) {
 		}
 		m_lastToothPhaseFromSyncPoint = wrapAngleMethod(m_lastToothPhaseFromSyncPoint - totalShift, "syncEnginePhase", ObdCode::CUSTOM_ERR_6555);
 		triggerToothAngleError = 0;
-
-#if EFI_ENGINE_CONTROL
-		// Reset schedulers to avoid "out-of-order" warnings/errors when transitioning phase
-		engine->injectionEvents.resetOverlapping();
-#endif // EFI_ENGINE_CONTROL
 
 		// On a crank-speed trigger the sync counter parity picks which trigger cycle starts the
 		// engine cycle, so a parity-changing shift means the next trigger index 0 is no longer one
@@ -480,8 +480,10 @@ void handleVvtCamSignal(TriggerValue front, efitick_t nowNt, int index) {
 	// Only record VVT position if we have full engine sync - may be bogus before that point
 	if (tc->triggerState.hasSynchronizedPhase()) {
 		tc->vvtPosition[bankIndex][camIndex] = vvtPosition;
+		tc->vvtPositionUpdateTimer[bankIndex][camIndex].reset(nowNt);
 	} else {
 		tc->vvtPosition[bankIndex][camIndex] = 0;
+		tc->vvtPositionUpdateTimer[bankIndex][camIndex].init();
 	}
 }
 
@@ -535,6 +537,10 @@ static void handleKickStart(trigger_event_e signal, efitick_t timestamp) {
 		return;
 	}
 	if (Sensor::getOrZero(SensorType::Rpm) >= KICK_START_MODE_MAX_RPM) {
+		return;
+	}
+	const auto ignitionState = getLimpManager()->allowIgnition();
+	if (!ignitionState && ignitionState.reason != ClearReason::KickStart) {
 		return;
 	}
 	floatms_t dwellMs = engine->ignitionState.getDwell();
@@ -1269,6 +1275,12 @@ void TriggerCentral::applyCamGapOverride() {
 }
 
 void TriggerCentral::applyShapesConfiguration() {
+	for (auto& bank : vvtPositionUpdateTimer) {
+		for (auto& timer : bank) {
+			timer.init();
+		}
+	}
+
 	// Re-read config in case it's changed
 	primaryTriggerConfiguration.update();
 	for (int camIndex = 0;camIndex < CAMS_PER_BANK;camIndex++) {

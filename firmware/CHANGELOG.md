@@ -22,6 +22,10 @@ Release template (copy/paste this for new release):
 
 ### Fixed
  - wasted to sequential transition when phase is detected #9613
+ - disabling active launch retains its hard spark cut bugfix
+ - Invalid vehicle speed no longer enables the launch hard spark cut
+ - Disabling launch control clears the cached spark cut.
+ - critical issue with staged batches injection and similar injector control fixes #10414
 
 ### Removed
  -
@@ -33,6 +37,18 @@ Release template (copy/paste this for new release):
 ## Unreleased
 
 ### Added
+ - Optional engine state machine, clutch-based shift recognition and state-based STFT regions. kudos AlphaX!
+ - Advanced VVT control with oil-pressure base duty, signed-error P-gain curves and configurable integral limits. kudos AlphaX!
+ - State-aware DFCO with Overrun/Decel/Both modes, optional detected-gear gating and shift suppression. kudos AlphaX!
+ - Time-based WOT enrichment with an AFR-offset curve and matching lambda target reporting. kudos AlphaX!
+ - Burst knock retard with an RPM/TPS-rate table and linear timing recovery. kudos AlphaX!
+ - Optional TPS1/TPS2 exponential smoothing with fast-transient reset. kudos AlphaX!
+ - Rolling launch control with captured-RPM spark skip, fuel enrichment and timing-retard ramp-out. kudos AlphaX!
+ - Output-shaft speed input with configurable tooth count and filtering.
+ - Clutch-aware gear detection with selectable engine/input-shaft RPM and vehicle/output-shaft speed sources.. kudos AlphaX!
+ - Transmission slip reporting with selectable RPM source and speed/validity gates.
+ - Cooling-fan A/C pressure mode with configurable PWM off/full duty and demand soft-start.. kudos AlphaX!
+ - Speedometer output bench test (100 Hz for three seconds).
  - h-bridge as one GPIO #9673
  - updater: keyboard table operation
  - 36-2-2 Suzuki trigger
@@ -40,6 +56,25 @@ Release template (copy/paste this for new release):
  - Nissan VK56DE (36-1-1) crank and PHASE cam triggers
 
 ### Fixed
+ - A failed configured A/C pressure sensor no longer re-enables the compressor after a pressure cut.
+ - VVT activation delay honors the full configured millisecond value, including fractions of a second.
+ - Ignition schedule rebuilds now discharge the coil charged before its output mapping changed.
+ - Invalid fuel-pressure readings use nominal pressure for injector duration and skip HPFP mass correction.
+ - Injector dead time is interpolated at the configured reference pressure when compensation is None or sensed rail pressure is missing or invalid. #10463
+ - Injector dead time uses the configured reference pressure before its first periodic pressure update, instead of the first pressure-table row.
+ - A GDI pump with zero configured cam lobes stays inactive and makes no fuel request.
+ - Shift torque reduction ignores invalid sensor readings when selecting spark cut, ignition retard, and time limits.
+ - Closed-loop VVT output stops when cam position feedback is missing or stale.
+ - TPS acceleration enrichment clears on engine stop, preventing old or steady throttle readings from adding fuel on restart.
+ - Push-button cranking respects the configured brake and clutch interlocks.
+ - Anti-lag stops after its configured duration while a zero timeout remains unrestricted.
+ - An active boost fuel cut stays in place when the MAP sensor reading fails.
+ - Priming skips injection when fuel is disabled, flood clear is active, or the engine has already started.
+ - Invalid ethanol readings use the primary fuel stoichiometric ratio.
+ - Zero-delay fuel protections cut only when lambda, oil pressure, or injector duty actually exceeds its limit.
+ - Kick-start cranking respects Lua ignition cuts and required phase synchronization.
+ - Maximum oil-pressure protection starts its timeout when the engine begins running.
+ - Predictive MAP caps total event duration across TPS retriggers and resets the TPS peak for each event. kudos AlphaX!
  - overdwell protection causes Null-pointer deref and crash #9435
  - huge print in Lua walks into memory #10159
  - H723 bootloader fixes

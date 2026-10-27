@@ -119,6 +119,7 @@ public class VariableRegistryValues {
 	public static final int bench_mode_e_BENCH_IDLE_VALVE = 8;
 	public static final int bench_mode_e_BENCH_MAIN_RELAY = 0;
 	public static final int bench_mode_e_BENCH_SECOND_IDLE_VALVE = 14;
+	public static final int bench_mode_e_BENCH_SPEEDO_TEST = 44;
 	public static final int bench_mode_e_BENCH_STARTER_DISABLE_RELAY = 3;
 	public static final int bench_mode_e_BENCH_STARTER_ENABLE_RELAY = 2;
 	public static final int bench_mode_e_BENCH_VVT0_VALVE = 16;
@@ -163,6 +164,8 @@ public class VariableRegistryValues {
 	public static final int brain_pin_diag_e_PIN_SHORT_TO_BAT = 0x04;
 	public static final int brain_pin_diag_e_PIN_SHORT_TO_GND = 0x02;
 	public static final int brain_pin_diag_e_PIN_UNKNOWN = 0x80;
+	public static final int BURST_KNOCK_RPM_SIZE = 8;
+	public static final int BURST_KNOCK_TPS_RATE_SIZE = 8;
 	public static final int C_MC33810_COUNT = 1;
 	public static final String CAM_1_MODE_NAME = "Cam mode (intake)";
 	public static final String CAM_2_MODE_NAME = "Cam mode (exhaust)";
@@ -408,6 +411,9 @@ public class VariableRegistryValues {
 	public static final int DEFAULT_SELT_STIM_RPM = 1200;
 	public static final int DEFAULT_SELT_STIM_VVT0 = 23;
 	public static final int DEFAULT_SOLENOID_FREQUENCY = 300;
+	public static final int dfco_fuel_cut_mode_e_Both = 2;
+	public static final int dfco_fuel_cut_mode_e_Decel = 1;
+	public static final int dfco_fuel_cut_mode_e_Overrun = 0;
 	public static final String DIALOG_NAME_VEHICLE_INFORMATION = "Vehicle Information";
 	public static final int DIGIPOT_COUNT = 4;
 	public static final int DISPLACEMENT_DIGITS = 3;
@@ -456,7 +462,7 @@ public class VariableRegistryValues {
 	public static final int ego_sensor_e_ES_PLX = 4;
 	public static final String egoSettings_NAME = "CAN O2 sensors";
 	public static final int EGT_CHANNEL_COUNT = 8;
-	public static final int engine_configuration_s_size = 4280;
+	public static final int engine_configuration_s_size = 5092;
 	public static final int engine_load_mode_e_LM_ALPHA_N = 2;
 	public static final int engine_load_mode_e_LM_LUA = 3;
 	public static final int engine_load_mode_e_LM_REAL_MAF = 1;
@@ -589,12 +595,19 @@ public class VariableRegistryValues {
 	public static final int ETB_COUNT = 2;
 	public static final int ETB_HW_MAX_FREQUENCY = 3000;
 	public static final int ETHERNET_PORT = 29001;
+	public static final int fan_ac_mode_e_Disabled = 0;
+	public static final int fan_ac_mode_e_Pressure = 2;
+	public static final int fan_ac_mode_e_Relay = 1;
 	public static final int FAN_PWM_CURVE_SIZE = 8;
 	public static final int FLASH_DATA_VERSION = 260908;
 	public static final int FLEX_TRANSIENT_CLT_SIZE = 8;
 	public static final int FLEX_TRANSIENT_ETH_SIZE = 8;
 	public static final int FLOW_LINEARIZATION_MASS_SIZE = 2;
 	public static final int FLOW_LINEARIZATION_PRESSURE_SIZE = 2;
+	public static final int FP_DUTY_RPM_SIZE = 4;
+	public static final int FP_DUTY_TABLE_SIZE = 4;
+	public static final int FP_PRESSURE_RPM_SIZE = 4;
+	public static final int FP_PRESSURE_TABLE_SIZE = 4;
 	public static final String FRONTEND_TITLE_BAR_NAME = "rusEFI";
 	public static final int FT_BANK_COUNT = 2;
 	public static final int ft_region_e_ftRegionCruise = 3;
@@ -607,6 +620,9 @@ public class VariableRegistryValues {
 	public static final int fuel_pressure_sensor_mode_e_FPM_Absolute = 0;
 	public static final int fuel_pressure_sensor_mode_e_FPM_Differential = 2;
 	public static final int fuel_pressure_sensor_mode_e_FPM_Gauge = 1;
+	public static final int fuel_pump_mode_e_Dual = 1;
+	public static final int fuel_pump_mode_e_Pwm = 2;
+	public static final int fuel_pump_mode_e_Single = 0;
 	public static final int FUEL_RPM_COUNT = 16;
 	public static final int FUEL_TRIM_SIZE = 4;
 	public static final int GAP_TRACKING_LENGTH = 18;
@@ -724,8 +740,8 @@ public class VariableRegistryValues {
 	public static final String GAUGE_NAME_FUEL_TEMPERATURE = "Fuel Temperature";
 	public static final String GAUGE_NAME_FUEL_TPS_EXTRA = "Fuel: TPS AE (ms or fraction)";
 	public static final String GAUGE_NAME_FUEL_VE = "Fuel: VE";
-	public static final String GAUGE_NAME_FUEL_WALL_AMOUNT = "Fuel: wall amount";
-	public static final String GAUGE_NAME_FUEL_WALL_CORRECTION = "Fuel: wall correction";
+	public static final String GAUGE_NAME_FUEL_WALL_AMOUNT = "Fuel Wall: amount";
+	public static final String GAUGE_NAME_FUEL_WALL_CORRECTION = "Fuel Wall: correction";
 	public static final String GAUGE_NAME_FW_VERSION = "ECU: Software Version";
 	public static final String GAUGE_NAME_GEAR_RATIO = "Gearbox Ratio";
 	public static final String GAUGE_NAME_GYRO_YAW = "Gyro: Yaw rate";
@@ -781,6 +797,7 @@ public class VariableRegistryValues {
 	public static final String GAUGE_NAME_TIMING_ADVANCE = "Timing: base ignition";
 	public static final String GAUGE_NAME_TPS = "TPS";
 	public static final String GAUGE_NAME_TPS2 = "TPS2";
+	public static final String GAUGE_NAME_TRANS_SLIP = "Transmission Slip";
 	public static final String GAUGE_NAME_TRG_ERR = "Trigger Error Counter";
 	public static final String GAUGE_NAME_TRG_GAP = "Sync: Trigger Latest Ratio";
 	public static final String GAUGE_NAME_TUNE_CRC16 = "Tune CRC16";
@@ -1294,7 +1311,7 @@ public class VariableRegistryValues {
 	public static final int imu_type_e_IMU_TYPE_4 = 4;
 	public static final int imu_type_e_IMU_TYPE_MB_A0065422618 = 5;
 	public static final int imu_type_e_IMU_VAG = 1;
-	public static final String INDICATOR_NAME_AC_SWITCH = "AC switch";
+	public static final String INDICATOR_NAME_AC_SWITCH = "AC: switch";
 	public static final String INDICATOR_NAME_BRAKE_DOWN = "Brake switch";
 	public static final String INDICATOR_NAME_CLUTCH_DOWN = "Clutch: down";
 	public static final String INDICATOR_NAME_CLUTCH_UP = "Clutch: up";
@@ -1432,7 +1449,7 @@ public class VariableRegistryValues {
 	public static final int PEDAL_TO_TPS_SIZE = 8;
 	public static final String pedalSensor_NAME = "Accelerator pedal";
 	public static final String pedalToTpsTbl_NAME = "ETB pedal target";
-	public static final int persistent_config_s_size = 16772;
+	public static final int persistent_config_s_size = 17680;
 	public static final int pid_s_size = 20;
 	public static final int pin_input_mode_e_PI_DEFAULT = 0;
 	public static final int pin_input_mode_e_PI_INVERTED_DEFAULT = 4;
@@ -1535,10 +1552,14 @@ public class VariableRegistryValues {
 	public static final int SentInput_INPUT6 = 6;
 	public static final int SentInput_INPUT7 = 7;
 	public static final int SentInput_NONE = 0;
-	public static final int SIGNATURE_HASH = 429340355;
 	public static final String SIMULATOR_TUNE_BIN_FILE_NAME = "generated/simulator_tune_image.bin";
 	public static final String SIMULATOR_TUNE_BIN_FILE_NAME_PREFIX = "generated/simulator_tune_image";
 	public static final String SIMULATOR_TUNE_BIN_FILE_NAME_SUFFIX = ".bin";
+	public static final int sm_clutch_switch_e_ClutchDown = 2;
+	public static final int sm_clutch_switch_e_ClutchUp = 1;
+	public static final int sm_clutch_switch_e_None = 0;
+	public static final int sm_shift_detection_mode_e_RpmRate = 0;
+	public static final int sm_shift_detection_mode_e_VssRate = 1;
 	public static final String smLaunchControl_NAME = "Launch Control";
 	public static final String SMOOTHED_GAUGE_NAME_AFR = "Smoothed Air/Fuel Ratio";
 	public static final String SMOOTHED_GAUGE_NAME_AFR2 = "Smoothed Air/Fuel Ratio 2";
@@ -1606,7 +1627,7 @@ public class VariableRegistryValues {
 	public static final int torqueReductionActivationMode_e_TORQUE_REDUCTION_BUTTON = 0;
 	public static final int torqueReductionActivationMode_e_TORQUE_REDUCTION_CLUTCH_DOWN_SWITCH = 2;
 	public static final int torqueReductionActivationMode_e_TORQUE_REDUCTION_CLUTCH_UP_SWITCH = 3;
-	public static final int TOTAL_CONFIG_SIZE = 16772;
+	public static final int TOTAL_CONFIG_SIZE = 17680;
 	public static final int TPS_2_BYTE_PACKING_MULT = 100;
 	public static final String TPS_ACCEL_UNITS = "ms/frac";
 	public static final int TPS_PPS_TOO_HIGH_THRESHOLD = 110;
@@ -1617,6 +1638,8 @@ public class VariableRegistryValues {
 	public static final int TRACTION_CONTROL_ETB_DROP_SPEED_SIZE = 6;
 	public static final int TRAILING_SPARK_RPM_SIZE = 4;
 	public static final int TRAILING_SPARK_SIZE = 4;
+	public static final int TRANSIENT_INPUT_INVALID = 1;
+	public static final int TRANSIENT_INPUT_NONE = 0;
 	public static final int TransmissionControllerMode_Generic4 = 2;
 	public static final int TransmissionControllerMode_Gm4l6x = 3;
 	public static final int TransmissionControllerMode_None = 0;
@@ -1868,10 +1891,10 @@ public class VariableRegistryValues {
 	public static final int TS_RESPONSE_UNRECOGNIZED_COMMAND = 0x83;
 	public static final int TS_SCATTER_OFFSETS_COUNT = 128;
 	public static final char TS_SET_LOGGER_SWITCH = 'l';
-	public static final String TS_SIGNATURE = "rusEFI master.2026.10.15.t-b-g.429340355";
+	public static final String TS_SIGNATURE = "rusEFI master.2026.10.27.t-b-g.2156634253";
 	public static final char TS_SIMULATE_CAN = '>';
 	public static final char TS_TEST_COMMAND = 't';
-	public static final int TS_TOTAL_OUTPUT_SIZE = 2228;
+	public static final int TS_TOTAL_OUTPUT_SIZE = 2248;
 	public static final String TS_TRIGGER_SCOPE_CHANNEL_1_NAME = "Channel 1";
 	public static final String TS_TRIGGER_SCOPE_CHANNEL_2_NAME = "Channel 2";
 	public static final int TS_TRIGGER_SCOPE_DISABLE = 5;
@@ -1931,6 +1954,8 @@ public class VariableRegistryValues {
 	public static final String VVT2_TARGET_NAME = "VVT exhaust target";
 	public static final String VVT_25_NAME = "INVALID";
 	public static final String VVT_26_NAME = "INVALID";
+	public static final int VVT_ADV_DISTANCE_SIZE = 9;
+	public static final int VVT_ADV_OILP_SIZE = 6;
 	public static final int vvt_mode_e_VVT_BARRA_3_PLUS_1 = 8;
 	public static final int vvt_mode_e_VVT_BMW_VANOS_RELUCTOR = 17;
 	public static final int vvt_mode_e_VVT_BOSCH_QUICK_START = 5;
@@ -1975,5 +2000,6 @@ public class VariableRegistryValues {
 	public static final int WARNING_BUFFER_SIZE = 120;
 	public static final int wbo_s_size = 8;
 	public static final String WE_SECTION_FILE = "tunerstudio/WueAnalyze.ini";
+	public static final int WOT_ENRICHMENT_SIZE = 8;
 	public static final int WWAE_TABLE_SIZE = 8;
 }

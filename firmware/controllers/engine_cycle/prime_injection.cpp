@@ -4,9 +4,9 @@
 
 #include "pch.h"
 #include "prime_injection.h"
-#include "injection_gpio.h"
 #include "sensor.h"
 #include "backup_ram.h"
+#include "limp_manager.h"
 #if EFI_PROD_CODE
 #include "microsecond_timer.h"
 #endif
@@ -106,6 +106,12 @@ uint32_t PrimeController::getKeyCycleCounter() const {
 }
 
 void PrimeController::onPrimeStart() {
+#if EFI_ENGINE_CONTROL
+	// A delayed pulse must use the current start and fuel-cut conditions.
+	if (isPrimeInjectionPulseSkipped() || !engineConfiguration->isInjectionEnabled || !getLimpManager()->allowInjection()) {
+		return;
+	}
+
 	auto durationMs = getPrimeDuration();
 
 	// Don't prime a zero-duration pulse
@@ -126,12 +132,14 @@ void PrimeController::onPrimeStart() {
 
 	// Open all injectors, schedule closing later
 	m_isPriming = true;
-	startSimultaneousInjection();
+	m_primeOutputsMask = (1u << engineConfiguration->cylindersCount) - 1;
+	startInjection(InjectorContext(m_primeOutputsMask, 0xF, false).raw);
 	getScheduler()->schedule("onPrimeStart", nullptr, endTime, action_s::make<onPrimeEndAdapter>( this ));
+#endif // EFI_ENGINE_CONTROL
 }
 
 void PrimeController::onPrimeEnd() {
-	endSimultaneousInjectionOnlyTogglePins();
+	endInjection(InjectorContext(m_primeOutputsMask, 0xF, false).raw);
 
 	m_isPriming = false;
 }

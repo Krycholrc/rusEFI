@@ -60,6 +60,31 @@ iterate all), mutability, naming universe, and flash layout.
 
 ## Sharp edges
 
+- **TunerStudio exposure does not imply SD logging.** `LiveDataProcessor` registers
+  `SdCardFieldsContent` only for entries with `constexpr:`. An entry with only
+  `engineModule:` generates output lookups but no SD fields; an entry with neither
+  still generates TunerStudio channels and datalog entries.
+  [tag:ltft_sd_state] The LTFT fragment maps all 13 channels through its generated
+  state subobject, guarded by `EFI_LTFT_CONTROL`.
+  When mapping a module with multiple inheritance, use its generated state
+  subobject as the expression: bit offsets are relative to that state, not the
+  complete module. Keep the expression guarded by the module's feature flag.
+- **SD and Lua can have different storage requirements.** [tag:live_data_sd_mapping]
+  When an entry has both `constexpr:` and `engineModule:`, the former supplies SD
+  addresses and the latter supplies runtime Lua lookups. The optional
+  `sd_conditional_compilation:` adds a restriction to the common
+  `conditional_compilation:` for SD only. Throttle model, HPFP, A/C and misfire
+  use `EFI_PROD_CODE` here because their mockable modules live in heap storage
+  on hosts. Their Lua lookups continue to follow module replacements.
+  `LiveDataSdCoverageTest` checks the 19 added fragment mappings;
+  `unitTestLog.stableLiveDataMappings` checks emitted host values, and
+  `unitTestLog.sdMappingsPreserveMockedLuaLookups` checks runtime lookup behavior.
+  TCU, wideband diagnostics and the example fragment have no SD mapping.
+  TCU selects its controller at runtime; wideband state needs timeout/permission
+  refresh independently of TunerStudio reads before a direct mapping is useful.
+  STFT input errors and its enum state/bin fields are mapped. Enums are written
+  as their underlying numeric values. Existing `FULL_SD_LOGS` gates still apply
+  to A/C and antilag.
 - **Dead generated file**: `value_lookup_generated.cpp` (switch-based getter + string-compare
   setter) is still emitted by `GetConfigValueConsumer` (first `-field_lookup_file` argument)
   but is NOT in any `.mk` — only the table variant + `value_lookup.cpp` are compiled. Both

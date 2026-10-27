@@ -18,6 +18,8 @@
 #include "hardware.h"
 #include "dc_motors.h"
 #include "idle_hardware.h"
+#include "electronic_throttle.h"
+#include "adc_subscription.h"
 // https://stackoverflow.com/questions/23427804/cant-find-mkdir-function-in-dirent-h-for-windows
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -52,6 +54,8 @@ EngineTestHelperBase::EngineTestHelperBase(Engine * eng, persistent_config_s * p
 	// todo: make this not a global variable, we need currentTimeProvider interface on engine
 	setTimeNowUs(0);
 	ButtonDebounce::resetForUnitTests();
+	AdcSubscription::resetForUnitTest();
+	resetMockAdcVoltages();
 
 	EnableToothLogger();
 	if (engine || engineConfiguration || config) {
@@ -71,6 +75,8 @@ EngineTestHelperBase::EngineTestHelperBase(Engine * eng, persistent_config_s * p
 
 EngineTestHelperBase::~EngineTestHelperBase() {
 	DisableToothLogger();
+	AdcSubscription::resetForUnitTest();
+	resetMockAdcVoltages();
 	engine = nullptr;
 	engineConfiguration = nullptr;
 	config = nullptr;
@@ -155,6 +161,9 @@ EngineTestHelper::EngineTestHelper(engine_type_e engineType, configuration_callb
 
 	resetConfigErrorStateForUnitTest();
 
+	// logging central queues are file-scope statics too: drop lines and the
+	// engine sniffer buffer an earlier test left queued
+	resetLoggingForUnitTest();
 	waveChart.init();
 
 	setCurveValue(config->cltFuelCorrBins, config->cltFuelCorr, CLT_CURVE_SIZE, -40, 1.5);
@@ -256,6 +265,11 @@ EngineTestHelper::~EngineTestHelper() {
   closeUnitTestLog();
 
 	// Cleanup
+#if EFI_ELECTRONIC_THROTTLE_BODY
+	// [tag:etb_test_lifetime] Release static controllers' references before our
+	// persistentConfig is destroyed, even if a test installed mock controllers.
+	resetElectronicThrottleForUnitTest();
+#endif
   	// reset pin config state, will trigger isPinConfigurationChanged
 	enginePins.resetForUnitTest();
 	enginePins.reset();
@@ -448,13 +462,13 @@ void EngineTestHelper::fireTriggerEvents(int count) {
 
 void EngineTestHelper::assertInjectorUpEvent(const char *msg, int eventIndex, efitimeus_t momentUs, long injectorIndex) {
 	InjectionEvent *event = &engine.injectionEvents.elements[injectorIndex];
-	auto const expected_action{ action_s::make<turnInjectionPinHigh>(uintptr_t{}) };
+	auto const expected_action{ action_s::make<startInjection>(scheduler_arg_t{}) };
 	assertEvent(msg, eventIndex, expected_action, momentUs, event);
 }
 
 void EngineTestHelper::assertInjectorDownEvent(const char *msg, int eventIndex, efitimeus_t momentUs, long injectorIndex) {
 	InjectionEvent *event = &engine.injectionEvents.elements[injectorIndex];
-	auto const expected_action{ action_s::make<turnInjectionPinLow>((InjectionEvent*){}) };
+	auto const expected_action{ action_s::make<endInjection>(scheduler_arg_t{}) };
 	assertEvent(msg, eventIndex, expected_action, momentUs, event);
 }
 
@@ -499,9 +513,8 @@ scheduling_s * EngineTestHelper::assertScheduling(const char *msg, int index, sc
 void EngineTestHelper::assertEvent(const char *msg, int index, action_s const& action, efitimeus_t momentUs, InjectionEvent *expectedEvent) {
 	scheduling_s *event = assertEvent5(msg, index, action, momentUs);
 
-	auto const actualEvent{ event->action.getArgument<InjectionEvent*>() };
-
-	ASSERT_EQ(expectedEvent->outputs[0], actualEvent->outputs[0]) << msg;
+	const InjectorContext ctx(event->action.getArgumentRaw());
+	ASSERT_EQ(expectedEvent->getIndex(), ctx.eventIndex()) << msg;
 // but this would not work	assertEqualsLM(msg, expectedPair, (long)eventPair);
 }
 

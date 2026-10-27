@@ -53,6 +53,7 @@
 #include "gppwm.h"
 #include "date_stamp.h"
 #include "rusefi_lua.h"
+#include "lua_heap.h"
 #include "buttonshift.h"
 #include "start_stop.h"
 #include "dynoview.h"
@@ -450,6 +451,10 @@ void commonInitEngineController() {
 
 	initGpPwm();
 
+#ifdef MODULE_FUEL_PUMP
+	initFuelPump();
+#endif
+
 #if EFI_IDLE_CONTROL
 	startIdleThread();
 #endif /* EFI_IDLE_CONTROL */
@@ -483,6 +488,8 @@ void commonInitEngineController() {
 #endif // EFI_ENGINE_CONTROL
 
 #if EFI_UNIT_TEST
+	// [tag:trigger_rpm_startup] General algorithm tests need RPM without a pin.
+	// TriggerRpmStartup removes this registration before testing hardware startup.
 	engine->rpmCalculator.Register();
 #endif /* EFI_UNIT_TEST */
 
@@ -563,6 +570,15 @@ static bool validateConfig(const engine_configuration_s* previousConfiguration) 
 
   // the only step which is allowed to modify configuration - everything else in this method is read-only validation
   applyDefaultsOrFixAfterBurn(previousConfiguration);
+	if (!(engineConfiguration->injector.flow > 0) || !std::isfinite(engineConfiguration->injector.flow)) {
+		criticalError("Primary injector flow must be positive");
+		return false;
+	}
+	if (engineConfiguration->enableStagedInjection &&
+		(!(engineConfiguration->injectorSecondary.flow > 0) || !std::isfinite(engineConfiguration->injectorSecondary.flow))) {
+		criticalError("Secondary injector flow must be positive when staged injection is enabled");
+		return false;
+	}
 	if (engineConfiguration->cylindersCount > MAX_CYLINDER_COUNT) {
 		// [tag:user_facing_ini_labels] Match the engine setting label in tunerstudio.template.ini.
 		criticalError("Invalid Number of cylinders: %d", engineConfiguration->cylindersCount);
@@ -794,6 +810,7 @@ void commonEarlyInit() {
 #endif
 
 #if EFI_LUA
+	luaHeapInit();
 	startLua();
 #endif // EFI_LUA
 

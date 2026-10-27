@@ -80,6 +80,191 @@ TEST(InjectorModel, getInjectionDurationWithHPFPManualCompensation) {
 #endif // (VBAT_INJECTOR_CURVE_PRESSURE_SIZE == 2) && (VBAT_INJECTOR_CURVE_SIZE == 8)
 }
 
+TEST(InjectorModel, InvalidFuelPressureUsesReferenceLinearizationDuration) {
+	EngineTestHelper eth(engine_type_e::TEST_ENGINE);
+	InjectorModelPrimary dut;
+
+	engineConfiguration->useInjectorFlowLinearizationTable = true;
+	engineConfiguration->fuelReferencePressure = 10000; // 100 bar
+	setLinearCurve(config->injectorFlowLinearizationPressureBins, 10, 100);
+	setLinearCurve(config->injectorFlowLinearizationFuelMassBins, 10, 20);
+	setTable(config->injectorFlowLinearization, 0.5f);
+	for (auto& duration : config->injectorFlowLinearization[1]) {
+		duration = 3.0f;
+	}
+
+	Sensor::setMockValue(SensorType::FuelPressureInjector, 10000); // 100 bar
+	EXPECT_FLOAT_EQ(3.0f, dut.getInjectionDuration(0.01f));
+
+	Sensor::setInvalidMockValue(SensorType::FuelPressureInjector);
+	ASSERT_FALSE(Sensor::get(SensorType::FuelPressureInjector));
+	EXPECT_FLOAT_EQ(3.0f, dut.getInjectionDuration(0.01f));
+}
+
+TEST(InjectorModel, InvalidFuelPressureSkipsHPFPMassCorrection) {
+	EngineTestHelper eth(engine_type_e::TEST_ENGINE);
+	InjectorModelPrimary dut;
+
+	engineConfiguration->injectorCompensationMode = ICM_HPFP_Manual_Compensation;
+	engineConfiguration->injectorFlowAsMassFlow = true;
+	engineConfiguration->injector.flow = 10.0f; // 10 mg/ms
+	setTable(engineConfiguration->injector.battLagCorrTable, 0.0f);
+	setLinearCurve(config->hpfpFuelMassCompensationFuelPressure, 10, 100);
+	setLinearCurve(config->hpfpFuelMassCompensationFuelMass, 10, 20);
+	setTable(config->hpfpFuelMassCompensation, 0.5f);
+	for (auto& correction : config->hpfpFuelMassCompensation[HPFP_FUEL_MASS_COMPENSATION_SIZE - 1]) {
+		correction = 2.0f;
+	}
+	dut.prepare();
+
+	Sensor::setMockValue(SensorType::FuelPressureHigh, 10000); // 100 bar
+	EXPECT_FLOAT_EQ(2.0f, dut.getInjectionDuration(0.01f));
+
+	Sensor::setInvalidMockValue(SensorType::FuelPressureHigh);
+	ASSERT_FALSE(Sensor::get(SensorType::FuelPressureHigh));
+	EXPECT_FLOAT_EQ(1.0f, dut.getInjectionDuration(0.01f));
+}
+
+TEST(InjectorModel, InvalidFuelPressureUsesReferenceDeadtime) {
+	EngineTestHelper eth(engine_type_e::TEST_ENGINE);
+	InjectorModelPrimary dut;
+
+	engineConfiguration->injectorCompensationMode = ICM_SensedRailPressure;
+	engineConfiguration->fuelPressureSensorMode = FPM_Differential;
+	engineConfiguration->fuelReferencePressure = 400;
+	engineConfiguration->useAbsolutePressureForLagTime = false;
+	setLinearCurve(engineConfiguration->injector.battLagCorrPressBins, 200, 400);
+	setTable(engineConfiguration->injector.battLagCorrTable, 1.0f);
+	for (auto& deadtime : engineConfiguration->injector.battLagCorrTable[1]) {
+		deadtime = 2.0f;
+	}
+
+	Sensor::setMockValue(SensorType::FuelPressureInjector, 200);
+	dut.updateState();
+	EXPECT_FLOAT_EQ(1.0f, dut.getDeadtime());
+
+	Sensor::setInvalidMockValue(SensorType::FuelPressureInjector);
+	ASSERT_FALSE(dut.getFuelDifferentialPressure());
+	dut.updateState();
+	EXPECT_FLOAT_EQ(2.0f, dut.getDeadtime());
+
+	// The legacy absolute-pressure lookup uses the same nominal differential
+	// pressure plus MAP when the measured pressure becomes invalid.
+	engineConfiguration->useAbsolutePressureForLagTime = true;
+	setLinearCurve(engineConfiguration->injector.battLagCorrPressBins, 300, 500);
+	Sensor::setMockValue(SensorType::Map, 100);
+	Sensor::setMockValue(SensorType::FuelPressureInjector, 200);
+	dut.updateState();
+	EXPECT_FLOAT_EQ(1.0f, dut.getDeadtime());
+
+	Sensor::setInvalidMockValue(SensorType::FuelPressureInjector);
+	dut.updateState();
+	EXPECT_FLOAT_EQ(2.0f, dut.getDeadtime());
+}
+
+TEST(InjectorModel, UnavailablePressureInterpolatesDeadtimeAfterRepeatedUpdates) {
+	EngineTestHelper eth(engine_type_e::TEST_ENGINE);
+	InjectorModelPrimary dut;
+
+	engineConfiguration->fuelReferencePressure = 300;
+	engineConfiguration->fuelPressureSensorMode = FPM_Differential;
+	engineConfiguration->useAbsolutePressureForLagTime = false;
+	engineConfiguration->injectorFlowAsMassFlow = true;
+	engineConfiguration->injector.flow = 10.0f; // 10 mg/ms
+	engineConfiguration->injectorNonlinearMode = INJ_None;
+	engineConfiguration->useInjectorFlowLinearizationTable = false;
+	Sensor::setMockValue(SensorType::BatteryVoltage, 14);
+	setLinearCurve(engineConfiguration->injector.battLagCorrBattBins, 6, 16);
+
+	// 200 kPa -> 1 ms, 400 kPa -> 2 ms, so the 300 kPa reference needs
+	// interpolation. Identical rows would hide the first-row lookup in #10463.
+	for (size_t row = 0; row < efi::size(engineConfiguration->injector.battLagCorrPressBins); row++) {
+		engineConfiguration->injector.battLagCorrPressBins[row] = 200.0f * (row + 1);
+		for (auto& deadtime : engineConfiguration->injector.battLagCorrTable[row]) {
+			deadtime = 1.0f + row;
+		}
+	}
+
+	// Start with a valid reading to establish that the model has already run.
+	engineConfiguration->injectorCompensationMode = ICM_SensedRailPressure;
+	Sensor::setMockValue(SensorType::FuelPressureInjector, 200);
+	dut.updateState();
+	EXPECT_FLOAT_EQ(200.0f, dut.pressureCorrectionReference);
+	EXPECT_FLOAT_EQ(1.0f, dut.getDeadtime());
+
+	auto checkReferencePressure = [&](const char* scenario) {
+		SCOPED_TRACE(scenario);
+		for (int update = 0; update < 3; update++) {
+			SCOPED_TRACE(update);
+			// Exercise the normal update/prepare path, including subsequent updates.
+			dut.updateState();
+			dut.prepare();
+			EXPECT_FLOAT_EQ(300.0f, dut.pressureCorrectionReference);
+			EXPECT_FLOAT_EQ(1.5f, dut.getDeadtime());
+			// 10 mg at 10 mg/ms plus the interpolated deadtime.
+			EXPECT_FLOAT_EQ(2.5f, dut.getInjectionDuration(0.01f));
+		}
+	};
+
+	engineConfiguration->injectorCompensationMode = ICM_None;
+	checkReferencePressure("None mode ignores the measured pressure");
+
+	engineConfiguration->injectorCompensationMode = ICM_SensedRailPressure;
+	Sensor::resetMockValue(SensorType::FuelPressureInjector);
+	ASSERT_FALSE(Sensor::hasSensor(SensorType::FuelPressureInjector));
+	checkReferencePressure("Sensed rail pressure with no sensor");
+
+	Sensor::setInvalidMockValue(SensorType::FuelPressureInjector);
+	ASSERT_TRUE(Sensor::hasSensor(SensorType::FuelPressureInjector));
+	ASSERT_FALSE(Sensor::get(SensorType::FuelPressureInjector));
+	checkReferencePressure("Sensed rail pressure with an invalid sensor");
+}
+
+TEST(InjectorModel, UnavailablePressureUsesReferenceBeforeStateUpdate) {
+	EngineTestHelper eth(engine_type_e::TEST_ENGINE);
+
+	engineConfiguration->fuelReferencePressure = 400;
+	engineConfiguration->useAbsolutePressureForLagTime = false;
+	setLinearCurve(engineConfiguration->injector.battLagCorrPressBins, 200, 400);
+	setTable(engineConfiguration->injector.battLagCorrTable, 1.0f);
+	for (auto& deadtime : engineConfiguration->injector.battLagCorrTable[1]) {
+		deadtime = 2.0f;
+	}
+
+	auto checkDeadtime = [](float expectedPressure) {
+		InjectorModelPrimary dut;
+
+		// Before the first pressure-state update, deadtime still uses the
+		// configured reference rather than the zero-initialized live readout.
+		EXPECT_FLOAT_EQ(0.0f, dut.pressureCorrectionReference);
+		EXPECT_FLOAT_EQ(2.0f, dut.getDeadtime());
+
+		dut.updateState();
+		EXPECT_FLOAT_EQ(expectedPressure, dut.pressureCorrectionReference);
+		EXPECT_FLOAT_EQ(2.0f, dut.getDeadtime());
+	};
+
+	engineConfiguration->injectorCompensationMode = ICM_None;
+	checkDeadtime(400.0f);
+
+	engineConfiguration->injectorCompensationMode = ICM_SensedRailPressure;
+	Sensor::resetMockValue(SensorType::FuelPressureInjector);
+	EXPECT_FALSE(Sensor::hasSensor(SensorType::FuelPressureInjector));
+	checkDeadtime(400.0f);
+
+	Sensor::setInvalidMockValue(SensorType::FuelPressureInjector);
+	EXPECT_TRUE(Sensor::hasSensor(SensorType::FuelPressureInjector));
+	EXPECT_FALSE(Sensor::get(SensorType::FuelPressureInjector));
+	checkDeadtime(400.0f);
+
+	// Legacy absolute-pressure lookup adds MAP to the reference pressure.
+	engineConfiguration->injectorCompensationMode = ICM_None;
+	engineConfiguration->useAbsolutePressureForLagTime = true;
+	setLinearCurve(engineConfiguration->injector.battLagCorrPressBins, 300, 500);
+	Sensor::setMockValue(SensorType::Map, 100);
+	checkDeadtime(500.0f);
+}
+
 TEST(InjectorModel, nonLinearFordMode) {
 	StrictMock<MockInjectorModel> dut;
 

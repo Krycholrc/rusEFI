@@ -37,10 +37,10 @@ DDEFS += -DFIRMWARE_ID=\"microRusEFI\"
 DDEFS += -DEFI_SOFTWARE_KNOCK=TRUE -DSTM32_ADC_USE_ADC3=TRUE
 DDEFS += $(VAR_DEF_ENGINE_TYPE)
 
-# F4-specific flash budget and peripherals
+# F4-specific memory placement and peripherals
 ifeq ($(PROJECT_CPU),ARCH_STM32F4)
-    # Keep flash headroom; use the matching INI from the firmware bundle.
-    DDEFS += -DEFI_EMBED_INI_MSD=FALSE
+    # Main SRAM has room for settings; leave CCM space for the engine and Lua heap.
+    DDEFS += -DPERSISTENT_LOCATION=
 
     # This board can capture SENT
     DDEFS += -DEFI_SENT_SUPPORT=TRUE
@@ -52,6 +52,7 @@ endif
 DDEFS += -DKLINE_SERIAL_DEVICE_RX=D9 -DKLINE_SERIAL_DEVICE_TX=D8
 DDEFS += -DKLINE_SERIAL_DEVICE=SD3
 DDEFS += -DSTM32_SERIAL_USE_USART3=TRUE
+MODULE_DTC_MANAGER = no
 
 # We are running on microRusEFI hardware!
 DDEFS += -DHW_MICRO_RUSEFI=1

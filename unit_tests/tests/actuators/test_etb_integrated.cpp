@@ -1,10 +1,70 @@
 #include "pch.h"
 #include "init.h"
 #include "electronic_throttle_impl.h"
+#include "mocks.h"
 #include "live_data.h"
 #include "live_data_ids.h"
+#include <memory>
+
+using ::testing::_;
+using ::testing::Return;
+using ::testing::StrictMock;
 
 extern int ebtResetCounter;
+
+// [tag:etb_test_lifetime] Static controllers must not outlive the configuration
+// owned by a helper. Inspect public state without dereferencing the stale PID.
+TEST(EtbLifetime, ControllersAfterHelperDestruction) {
+	EtbController* controllers[ETB_COUNT];
+	{
+		EngineTestHelper eth(engine_type_e::TEST_ENGINE);
+		Sensor::setMockValue(SensorType::Tps1, 25, true);
+		Sensor::setMockValue(SensorType::Tps2, 30, true);
+		doInitElectronicThrottle(true);
+
+		for (size_t i = 0; i < ETB_COUNT; i++) {
+			controllers[i] = static_cast<EtbController*>(engine->etbControllers[i]);
+			ASSERT_EQ(static_cast<uint8_t>(EtbState::SuccessfulInit), controllers[i]->state);
+			controllers[i]->setLuaAdjustment(12 + i);
+		}
+	}
+
+	for (size_t i = 0; i < ETB_COUNT; i++) {
+		EXPECT_EQ(DC_None, controllers[i]->getFunction());
+		EXPECT_EQ(static_cast<uint8_t>(EtbState::Uninitialized), controllers[i]->state);
+		EXPECT_FLOAT_EQ(0, controllers[i]->getLuaAdjustment());
+	}
+
+	// Heap allocation prevents a new stack helper from masking the expired
+	// configuration's address. This is the same setup path as LuaAccelEnrichment.
+	{
+		auto next = std::make_unique<EngineTestHelper>(engine_type_e::TEST_ENGINE);
+		ASSERT_FALSE(Sensor::hasSensor(SensorType::Tps1));
+		ASSERT_FALSE(Sensor::hasSensor(SensorType::Tps2));
+		setupSimpleTestEngineWithMafAndTT_ONE_trigger(next.get());
+
+		// Also exercise teardown of a heap-owned configuration, then a helper
+		// whose disabled slots bypass controller initialization entirely.
+		Sensor::setMockValue(SensorType::Tps1, 25, true);
+		Sensor::setMockValue(SensorType::Tps2, 30, true);
+		doInitElectronicThrottle(true);
+		for (auto controller : controllers) {
+			ASSERT_EQ(static_cast<uint8_t>(EtbState::SuccessfulInit), controller->state);
+		}
+	}
+	{
+		auto next = std::make_unique<EngineTestHelper>(engine_type_e::TEST_ENGINE,
+			[](engine_configuration_s* cfg) {
+				for (auto& function : cfg->etbFunctions) {
+					function = DC_None;
+				}
+			});
+		setupSimpleTestEngineWithMafAndTT_ONE_trigger(next.get());
+		for (auto controller : controllers) {
+			EXPECT_EQ(DC_None, controller->getFunction());
+		}
+	}
+}
 
 static EtbController * initEtbIntegratedTest() {
 	etbPidReset(); // ETB controlles are global shared instances :(
@@ -46,6 +106,73 @@ TEST(etb, integrated) {
 	etb->update();
 }
 
+TEST(etb, failedPedalDisarmsAntilagAndClosesEtbTarget) {
+	EngineTestHelper eth(engine_type_e::TEST_ENGINE);
+	engineConfiguration->antiLagEnabled = true;
+	engineConfiguration->antiLagActivationMode = ALWAYS_ON_ANTILAG;
+	engineConfiguration->ALSMinRPM = 400;
+	engineConfiguration->ALSMaxRPM = 3200;
+	engineConfiguration->ALSMinCLT = 50;
+	engineConfiguration->ALSMaxCLT = 105;
+	engineConfiguration->ALSMaxTPS = 5;
+	// Keep anti-lag available across the six-second sensor startup delay below.
+	// Duration-limit behavior is covered by AntilagStopsAfterConfiguredTimeout.
+	engineConfiguration->ALSMaxDuration = 0;
+	engineConfiguration->ALSEtbAdd = 20;
+	engineConfiguration->etbIdleThrottleRange = 0;
+	engineConfiguration->etbMinimumPosition = 1;
+	engineConfiguration->etbMaximumPosition = 100;
+	Sensor::setMockValue(SensorType::Rpm, 2000);
+	Sensor::setMockValue(SensorType::Clt, 80);
+	Sensor::setMockValue(SensorType::Tps1, 10, true);
+	Sensor::setMockValue(SensorType::AcceleratorPedal, 20, true);
+	Sensor::setMockValue(SensorType::DriverThrottleIntent, 20);
+	StrictMock<MockVp3d> pedalMap;
+	EXPECT_CALL(pedalMap, getValue(_, _))
+		.WillRepeatedly([](float, float pedal) { return pedal; });
+	StrictMock<MockMotor> motor;
+	EtbController etb;
+	ASSERT_TRUE(etb.init(DC_Throttle1, &motor, &engineConfiguration->etb, &pedalMap));
+	engine->antilagController.update();
+	ASSERT_FALSE(engine->antilagController.isAntilagCondition);
+	ASSERT_NEAR(20, etb.getSetpoint().value_or(-1), 0.01f);
+
+	auto& checker = engine->module<SensorChecker>().unmock();
+	checker.onIgnitionStateChanged(true);
+	eth.moveTimeForwardSec(6);
+	checker.onSlowCallback();
+	ASSERT_TRUE(checker.analogSensorsShouldWork());
+
+	Sensor::setMockValue(SensorType::AcceleratorPedal, 0, true);
+	Sensor::setMockValue(SensorType::DriverThrottleIntent, 0);
+	engine->antilagController.update();
+	ASSERT_TRUE(engine->antilagController.ALSTimerCondition);
+	ASSERT_TRUE(engine->antilagController.isAntilagCondition);
+	ASSERT_NEAR(20, etb.getSetpoint().value_or(-1), 0.01f);
+
+	Sensor::setInvalidMockValue(SensorType::DriverThrottleIntent);
+	// A failed intent reading must not keep the previous anti-lag target.
+	EXPECT_NEAR(1, etb.getSetpoint().value_or(-1), 0.01f);
+	engine->antilagController.update();
+	EXPECT_FALSE(engine->antilagController.isAntilagCondition);
+
+	Sensor::setMockValue(SensorType::DriverThrottleIntent, 0);
+	engine->antilagController.update();
+	ASSERT_TRUE(engine->antilagController.isAntilagCondition);
+	Sensor::setInvalidMockValue(SensorType::AcceleratorPedal);
+	// ETB must use its fault fallback even before anti-lag updates its state.
+	EXPECT_NEAR(1, etb.getSetpoint().value_or(-1), 0.01f);
+	Sensor::setInvalidMockValue(SensorType::DriverThrottleIntent);
+	checker.onSlowCallback();
+	engine->antilagController.update();
+	EXPECT_FALSE(engine->antilagController.ALSMaxThrottleIntentCondition);
+	EXPECT_FALSE(engine->antilagController.isAntilagCondition);
+	EXPECT_NEAR(1, etb.getSetpoint().value_or(-1), 0.01f);
+	EXPECT_CALL(motor, enable());
+	EXPECT_CALL(motor, set(::testing::Lt(0.0f))).WillOnce(Return(false));
+	etb.update();
+}
+
 TEST(etb, intermittentTps) {
 	EngineTestHelper eth(engine_type_e::TEST_ENGINE); // we have a destructor so cannot move EngineTestHelper into utility method
 	EtbController *etb = initEtbIntegratedTest();
@@ -55,7 +182,8 @@ TEST(etb, intermittentTps) {
 	// Tell the sensor checker that the ignition is on
 	engine->module<SensorChecker>()->onIgnitionStateChanged(true);
 	engine->module<SensorChecker>()->onSlowCallback();
-	advanceTimeUs(MS2US(1000));
+	// checks start 5 seconds after ignition on
+	advanceTimeUs(MS2US(6000));
 	engine->module<SensorChecker>()->onSlowCallback();
 	// todo: fix me https://github.com/rusefi/rusefi/issues/5233
 	// EXPECT_EQ( 3,  recentWarnings.getCount()) << "intermittentTps";

@@ -11,7 +11,9 @@ replacement/adjustment path, see [Lua implementation injection points](lua_imple
 
 | File | Role |
 |-------------------------------------------------------|-------------------------------------------------|
-| firmware/controllers/lua/lua_hooks.cpp | Main registration site: `configureRusefiLuaHooks()` registers nearly all functions and the luaaa helper classes |
+| firmware/controllers/lua/lua_hooks.cpp | Main hook registration and VM-specific initialization |
+| firmware/controllers/lua/lua_class_adapters.cpp | Helper class constructors, direct method adapters and sensor-name lookup |
+| firmware/controllers/lua/lua_hooks_registry.cpp | Eager registration visitor and optional per-VM lazy native binding cache |
 | firmware/controllers/lua/lua_hooks_util.cpp | `configureRusefiLuaUtilHooks()`: print/interpolate/find* helpers, `mcu_standby` |
 | firmware/controllers/lua/lua_hooks_ext.cpp | `configureRusefiLuaHooksExt()`: currently empty extension point |
 | firmware/controllers/lua/lua.cpp | Lua thread itself; registers `setTickRate`, invokes the `onTick` callback |
@@ -35,6 +37,42 @@ Conventions worth knowing:
   (`getCanRxDropped`, `getCanBaudRate`, `setEngineTorque`, `getTorque`, `getGpPwm`,
   `disableExtendedCanBroadcast`); boards can also trim with `DISABLE_LUA_SET_TIMING_MULT`,
   `DISABLE_LUA_SET_FUEL_ADD`, `WITH_LUA_PID`, `WITH_LUA_CONSUMPTION`, `WITH_LUA_STOP_ENGINE`.
+
+## Runtime memory
+
+STM32F4 builds enable `LUA_LAZY_NATIVE_HOOKS`: native function names and targets stay
+in firmware flash until a script first reads them. Resolved functions are cached
+in a private per-VM table, so subsequent reads avoid scanning the hook list. Script
+replacement and explicit `nil` assignment remain effective before and after
+resolution. Helper classes and board-specific setup still initialize eagerly.
+Other MCU families keep eager native registration unless they opt in.
+
+Raw C-API enumeration of globals does not include these private native bindings.
+The ECU Lua build does not expose the base-library `_G`, `pairs` or `rawget`.
+
+The script storage limit is not an execution-memory guarantee. VM setup, API
+names, tables, compiled code and script-created objects all consume runtime RAM.
+On STM32F4, Lua allocates from available CCM and optional RAM first, then the
+shared ChibiOS heap. Separate regions cannot satisfy a single allocation larger
+than their individual free blocks.
+
+`lua.cpp` uses fixed `@script.lua` and `@interactive.lua` chunk names so Lua's
+debug metadata retains a short name with line numbers, rather than another copy
+of the source in the execution heap. [tag:lua_chunk_name]
+
+Allocation failures report `CUSTOM_LUA_ERROR` (C6730) through the warning channel.
+VM initialization, tick lookup/calls and CAN argument construction/calls execute
+inside `luaProtectedCall`. Failed initialization closes the partial state and
+waits for a Lua reset; a failed callback returns to the Lua loop. Keep C++ objects
+requiring destruction outside those callbacks because Lua errors use `longjmp`.
+The last-resort panic handler warns and parks only the Lua thread; that exceptional
+path requires an ECU restart. [tag:lua_protected_setup]
+
+The `luaaa` class-name pointer must only be published after its userdata has a
+GC finalizer. Otherwise an allocation failure during registration leaves a dangling
+pointer after VM teardown and prevents the next interpreter from initializing.
+`LuaBasic.SetupFailureAtEachAllocationAndRetry` exercises partial registration and
+subsequent startup across allocation failures.
 
 ## Categories
 
@@ -68,17 +106,18 @@ Lets a script *be* a sensor - e.g. CAN-sourced coolant temp or pedal position.
 
 ### 3. Virtual switch inputs (overriding driver controls)
 
-Boolean state pushed into `engine->engineState.lua.*`, consumed by the respective controllers
-instead of / in addition to physical switches.
+Switch state consumed by the respective controllers instead of / in addition
+to physical switches. Most setters write booleans into `engine->engineState.lua.*`;
+the launch and rolling-idle trigger setters take integers and write controller state.
 
 | Function | Target |
 |------------------------------|--------|
-| `setClutchUpState(bool)` / `setClutchDownState(bool)` | Clutch switches |
+| `setClutchUpState(bool)` / `setClutchDownState(bool)` | Clutch switches. With no physical clutch-down pin selected, `setClutchDownState(true)` allows closed-throttle idle correction above the RPM and vehicle-speed entry limits; cranking and startup taper still apply. |
 | `setBrakePedalState(bool)` | Brake pedal |
 | `setAcRequestState(bool)` | AC request "button" |
 | `setTorqueReductionState(bool)` | Flat-shift/torque-reduction trigger |
-| `setLaunchTrigger(bool)` | `launchController.luaLaunchState` (EFI_LAUNCH_CONTROL) |
-| `setRollingIdleTrigger(bool)` | `antilagController.luaAntilagState` (EFI_ANTILAG_SYSTEM) |
+| `setLaunchTrigger(0 or 1)` | `launchController.luaLaunchState` (EFI_LAUNCH_CONTROL); selects the raw input in Lua activation mode, with native launch gates still applied. See [Launch Control](launch_control.md) for arming and reset behavior. |
+| `setRollingIdleTrigger(0 or 1)` | `antilagController.luaAntilagState` (EFI_ANTILAG_SYSTEM) |
 
 ### 4. Closed-loop trims and adjustments (fuel / ignition / boost / idle / ETB)
 
@@ -166,7 +205,14 @@ script-owned curves/tables/settings defined in the tune.
 | `table3d(humanIdx, x, y)` | 1-based script table lookup |
 | `findCurveIndex("name")` / `findTableIndex("name")` | Name -> 1-based index, nil if missing; resolve once at script start |
 | `findSetting("name", default)` | Named `scriptSetting[]` value with fallback |
-| `getOutput("name")` | By-name read of any TS output channel (calls `updateTunerStudioState()` for freshness) |
+| `getOutput("name")` | By-name read of supported generated output channels in INI engineering units; applies constant scale/offset and calls `updateTunerStudioState()` for freshness |
+
+`[tag:live_data_output_scale]` Output conversion is automatic. For example,
+`dwellActualRatio` returns percent deviation (`1.05` in storage becomes `5`),
+and `misfireEmaUs`, `misfireLastSegUs`, `misfireThreshUs`, `misfireWobbleUs`
+and `misfireWobbleThreshUs` return milliseconds despite their names. Scripts
+written for the former raw values need their unit conversions updated.
+Packed channels already unpack in C++; only the remaining offset is applied.
 
 ### 9. Engine/vehicle state queries
 

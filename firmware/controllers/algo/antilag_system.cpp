@@ -56,12 +56,17 @@ bool AntilagSystemBase::isALSMaxCLTCondition() const {
 }
 
 bool AntilagSystemBase::isALSMaxThrottleIntentCondition() const {
-	int throttleIntent = Sensor::getOrZero(SensorType::DriverThrottleIntent);
+	auto throttleIntent = Sensor::get(SensorType::DriverThrottleIntent);
 
-	return engineConfiguration->ALSMaxTPS > throttleIntent;
+	return throttleIntent.Valid && engineConfiguration->ALSMaxTPS > static_cast<int>(throttleIntent.Value);
 }
 
 bool AntilagSystemBase::isInsideALSTimerCondition() {
+	// A zero timeout leaves anti-lag duration unrestricted.
+	if (engineConfiguration->ALSMaxDuration <= 0) {
+		return true;
+	}
+
 	auto ALStime = ALStimer.getElapsedSeconds();
 
 	return ALStime < engineConfiguration->ALSMaxDuration;
@@ -76,11 +81,7 @@ bool AntilagSystemBase::isAntilagConditionMet(float rpm) {
 	ALSMaxCLTCondition = isALSMaxCLTCondition();
 	ALSMaxThrottleIntentCondition = isALSMaxThrottleIntentCondition();
 	ALSSwitchCondition = isInsideALSSwitchCondition();
-	ALSTimerCondition = true;
-/*
-todo: looking for a hero to figure out unit test part of this
 	ALSTimerCondition = isInsideALSTimerCondition();
-	*/
 
 	return ALSMinRPMCondition &&
 	    ALSMaxRPMCondition &&

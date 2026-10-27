@@ -1,0 +1,30 @@
+set_prefix "Engine SM"
+
+struct_no_prefix engine_state_machine_state_s
+
+	bit engineSmEnabled;enabled
+	bit engineSmIsOff;Off
+	bit engineSmIsCranking;Cranking
+	bit engineSmIsAfterStart;Afterstart
+	bit engineSmIsIdle;Idle
+	bit engineSmIsCoasting;Coasting
+	bit engineSmIsTransient;Transient
+	bit engineSmIsWot;WOT
+	bit engineSmIsCruising;Cruising
+	bit engineSmIsOverrun;Overrun
+	bit engineSmIsLaunchControl;Launch Control
+	bit engineSmIsTorqueReduction;Torque Reduction
+	bit engineSmIsUpshifting;Upshifting
+	bit engineSmIsDownshifting;Downshifting
+	bit engineSmIsCold;Cold engine
+	bit engineSmIsOperating;At operating temp
+	bit engineSmIsHot;Hot engine
+	bit engineSmIsAccelerating;Accelerating
+	bit engineSmIsDecelerating;Decelerating
+
+	uint8_t engineSmCurrentState;display state
+
+	float engineSmShiftAccumulator;Shift accumulator;"", 1, 0, -100, 100, 1
+	float engineSmRpmRate;RPM rate (RPM/t);"RPM/s", 1, 0, -20000, 20000, 0
+
+end_struct

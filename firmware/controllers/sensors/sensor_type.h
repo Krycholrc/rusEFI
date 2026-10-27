@@ -167,7 +167,13 @@ enum class SensorType : unsigned char {
 	AuxSpeed1,
 	AuxSpeed2,
 
-	// Let's always have all auxiliary sensors at the end - please add specific sensors above auxiliary
+	OutputShaftSpeed,
+
+	// Resolved throttle positions before optional exponential smoothing.
+	Tps1Unfiltered,
+	Tps2Unfiltered,
+
+	// Preserve existing numeric sensor IDs: append new types above PlaceholderLast.
 
 	// Leave me at the end!
 	PlaceholderLast,

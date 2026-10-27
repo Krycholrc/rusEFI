@@ -44,10 +44,16 @@ public class IndicatorPanel {
         this.ini = ini;
 
         if (columns > 0) {
-            panel = new JPanel(new GridLayout(0, columns, 4, 4));
+            panel = new JPanel(new GridLayout(0, columns, 4, 4)) {
+                @Override
+                public Dimension getMaximumSize() {
+                    // Chips keep their height instead of stretching over a tall dialog column.
+                    return new Dimension(super.getMaximumSize().width, getPreferredSize().height);
+                }
+            };
             panel.setAlignmentX(Component.LEFT_ALIGNMENT);
         } else {
-            panel = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 2));
+            panel = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 4));
         }
 
         for (IndicatorModel model : this.indicators) {
@@ -104,12 +110,7 @@ public class IndicatorPanel {
 
 
     static JLabel makeLabel() {
-        JLabel label = new JLabel(" ");
-        label.setOpaque(true);
-        label.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(Color.GRAY, 1),
-                BorderFactory.createEmptyBorder(4, 8, 4, 8)));
-        return label;
+        return new TuningStyle.Chip();
     }
 
     /**
@@ -123,6 +124,11 @@ public class IndicatorPanel {
         candidates.addAll(TsStringFunction.allPossibleResolutions(model.getOffLabel(), ini));
 
         String saved = label.getText();
+        // measure in bold: a solid chip shows its text in bold (TuningStyle.Chip#setSolid)
+        Font savedFont = label.getFont();
+        if (savedFont != null) {
+            label.setFont(savedFont.deriveFont(Font.BOLD));
+        }
         int maxW = 0, maxH = 0;
         for (String text : candidates) {
             label.setText(text == null || text.isEmpty() ? " " : text);
@@ -131,6 +137,7 @@ public class IndicatorPanel {
             if (d.height > maxH) maxH = d.height;
         }
         label.setText(saved);
+        label.setFont(savedFont);
         if (maxW > 0) {
             Dimension fixed = new Dimension(fixedWidth > 0 ? fixedWidth : maxW, maxH);
             label.setPreferredSize(fixed);
@@ -156,21 +163,25 @@ public class IndicatorPanel {
         }
         Boolean active = ExpressionEvaluator.evaluateBooleanExpression(indicator.getExpression(), context);
         final String text;
-        final Color bg, fg;
+        final String iniBg, iniFg;
         if (Boolean.TRUE.equals(active)) {
             text = resolveLabel(indicator.getOnLabel(), ini, context);
-            bg = parseColor(indicator.getOnBg());
-            fg = parseColor(indicator.getOnFg());
+            iniBg = indicator.getOnBg();
+            iniFg = indicator.getOnFg();
         } else {
             String off = resolveLabel(indicator.getOffLabel(), ini, context);
             text = off.isEmpty() ? " " : off;
-            bg = parseColor(indicator.getOffBg());
-            fg = parseColor(indicator.getOffFg());
+            iniBg = indicator.getOffBg();
+            iniFg = indicator.getOffFg();
+        }
+        Color[] colors = TuningStyle.indicatorColors(iniBg, iniFg);
+        if (label instanceof TuningStyle.Chip) {
+            ((TuningStyle.Chip) label).setSolid(TuningStyle.isSolidTone(TuningStyle.indicatorTone(iniBg, iniFg)));
         }
         label.setText(text);
         label.setToolTipText(text);
-        label.setBackground(bg);
-        label.setForeground(fg);
+        label.setBackground(colors[0]);
+        label.setForeground(colors[1]);
     }
 
     private static void addLabelVariables(Set<String> variables, String label) {

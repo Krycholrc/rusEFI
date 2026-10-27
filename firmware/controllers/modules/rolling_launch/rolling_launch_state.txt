@@ -1,0 +1,17 @@
+set_prefix "Rolling Launch"
+
+struct_no_prefix rolling_launch_state_s
+
+	bit isRollingLaunchArmed;armed
+	bit isRollingLaunchActive;button active
+	bit rollingLaunchSwitchState;switch state
+	bit luaRollingLaunchState;Lua trigger
+	bit isRollingLaunchRampActive;ramp-out active
+
+	float capturedRpm;captured RPM
+	float rollingLaunchTargetRpm;hold target RPM
+	float rollingLaunchSparkSkipRatio;spark skip ratio
+	float rollingLaunchTimingRetardOut;timing retard
+	float rollingLaunchRampElapsed;ramp elapsed
+
+end_struct

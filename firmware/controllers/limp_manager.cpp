@@ -121,12 +121,6 @@ void LimpManager::updateState(float rpm, efitick_t nowNt) {
 		allowFuel.clear(ClearReason::Lua);
 	}
 
-	if (engineConfiguration->kickStartCranking && rpm < KICK_START_MODE_MAX_RPM) {
-		// normal spark scheduling is suppressed: kick-start logic in handleShaftSignal()
-		// fires both coils directly off the trigger edge, see #4569
-		allowSpark.clear(ClearReason::KickStart);
-	}
-
 	updateRevLimit(rpm);
 	if (m_revLimitHysteresis.test(rpm, m_revLimit, resumeRpm)) {
 		if (engineConfiguration->cutFuelOnHardLimit) {
@@ -170,24 +164,32 @@ void LimpManager::updateState(float rpm, efitick_t nowNt) {
 	// Limit fuel only on boost pressure (limiting spark bends valves)
 	float mapCut = engineConfiguration->boostCutPressure;
 	if (mapCut != 0) {
-		// require drop of 'boostCutPressureHyst' kPa to resume fuel
-		if (m_boostCutHysteresis.checkIfLimitIsExceeded(Sensor::getOrZero(SensorType::Map), mapCut, engineConfiguration->boostCutPressureHyst)) {
+		// Keep an active cut until a valid MAP reading falls below the resume pressure.
+		auto map = Sensor::get(SensorType::Map);
+		if (map.Valid) {
+			m_boostCutHysteresis.checkIfLimitIsExceeded(map.Value, mapCut, engineConfiguration->boostCutPressureHyst);
+		}
+		if (m_boostCutHysteresis.isLimitExceeded()) {
 			allowFuel.clear(ClearReason::BoostCut);
 			if (shouldReportCutWarning(nowNt)) {
 				warning(ObdCode::OBD_Engine_Overboost, "Boost pressure fuel cut");
 			}
 		}
+	} else {
+		m_boostCutHysteresis = {};
 	}
 
 	if (engine->rpmCalculator.isRunning()) {
 		bool hasOilpSensor = Sensor::hasSensor(SensorType::OilPressure);
 		auto oilp = Sensor::get(SensorType::OilPressure);
 		uint16_t minOilPressure = engineConfiguration->minOilPressureAfterStart;
+		bool isInAfterStartWindow = false;
 
 		// Only check if the setting is enabled and you have an oil pressure sensor
 		if (minOilPressure > 0 && hasOilpSensor) {
 			// Has it been long enough we should have pressure?
 			bool isTimedOut = engine->rpmCalculator.getSecondsSinceEngineStart(nowNt) > 5.0f;
+			isInAfterStartWindow = !isTimedOut;
 
 			// Only check before timed out
 			if (!isTimedOut) {
@@ -209,30 +211,38 @@ void LimpManager::updateState(float rpm, efitick_t nowNt) {
 			float minPressure = interpolate2d(rpm, config->minimumOilPressureBins, config->minimumOilPressureValues);
 			bool isPressureSufficient = oilp.Value > minPressure;
 
-			if (isPressureSufficient) {
+			// #9879: cold oil needs time to reach running pressure, so the
+			// running check waits until the after-start window is over
+			if (isPressureSufficient || isInAfterStartWindow) {
 				m_lowOilPressureTimer.reset(nowNt);
 			}
 
-			if (m_lowOilPressureTimer.hasElapsedSec(engineConfiguration->minimumOilPressureTimeout)) {
+			if (!isPressureSufficient && !isInAfterStartWindow
+				&& m_lowOilPressureTimer.hasElapsedSec(engineConfiguration->minimumOilPressureTimeout)) {
 				allowFuel.clear(ClearReason::OilPressure);
 			}
 		}
 
 		// check the maximum oil pressure
 		float maxOilPressure = interpolate2d(rpm, config->maximumOilPressureBins, config->maximumOilPressureValues);
-		if (maxOilPressure > 0 && hasOilpSensor) {
-			if (oilp.Value < maxOilPressure) {
+		if (maxOilPressure > 0 && oilp) {
+			bool isPressureTooHigh = oilp.Value >= maxOilPressure;
+			if (m_highOilPressureTimer.get() == Timer::InitialState || !isPressureTooHigh) {
 				m_highOilPressureTimer.reset(nowNt);
 			}
-			if (m_highOilPressureTimer.hasElapsedSec(engineConfiguration->maxOilPressureTimeout)) {
+			if (isPressureTooHigh
+				&& m_highOilPressureTimer.hasElapsedSec(engineConfiguration->maxOilPressureTimeout)) {
 				allowFuel.clear(ClearReason::OilPressure);
 			}
+		} else {
+			m_highOilPressureTimer.reset(nowNt);
 		}
 
 	} else {
 		// reset state in case of stalled engine
 		m_hadOilPressureAfterStart = false;
 		m_lowOilPressureTimer.reset(nowNt);
+		m_highOilPressureTimer.reset(nowNt);
 	}
 
 	// If we're in the engine-stop window (a stop was requested recently via start button, Lua,
@@ -272,7 +282,8 @@ void LimpManager::updateState(float rpm, efitick_t nowNt) {
 		}
 
 		// True if isOverSustainedDutyCycle has been true for longer than the timeout
-		bool sustainedLimitTimedOut = m_injectorDutySustainedTimer.hasElapsedSec(engineConfiguration->maxInjectorDutySustainedTimeout);
+		bool sustainedLimitTimedOut = isOverSustainedDutyCycle
+			&& m_injectorDutySustainedTimer.hasElapsedSec(engineConfiguration->maxInjectorDutySustainedTimeout);
 
 		bool someLimitTripped = isOverInstantDutyCycle || sustainedLimitTimedOut;
 
@@ -313,6 +324,12 @@ void LimpManager::updateState(float rpm, efitick_t nowNt) {
 		allowSpark.clear(ClearReason::LaunchCut);
 	}
 #endif // EFI_LAUNCH_CONTROL
+
+	if (engineConfiguration->kickStartCranking && rpm < KICK_START_MODE_MAX_RPM) {
+		// Suppress normal spark scheduling without hiding another ignition cut
+		// from the kick-start path in handleShaftSignal().
+		allowSpark.clear(ClearReason::KickStart);
+	}
 
 	m_transientAllowInjection = allowFuel;
 	m_transientAllowIgnition = allowSpark;

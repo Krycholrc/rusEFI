@@ -5,6 +5,7 @@
 #include "pch.h"
 
 #include "launch_test_base.h"
+#include "launch_control.h"
 
 namespace {
     constexpr int TEST_LAUNCH_RPM = 3850;
@@ -329,4 +330,41 @@ namespace {
                 /* testData = */ DEFAULT_NO_LAUNCH_SPARK_SKIP_TEST_DATA
         );
     }
+
+    // ECU-016: disabling active launch must clear its hard spark cut.
+    TEST(LaunchControl, DisablingActiveLaunchControlClearsSparkCut) {
+        EngineTestHelper eth(engine_type_e::TEST_ENGINE);
+        engineConfiguration->launchControlEnabled = true;
+        engineConfiguration->launchActivationMode = ALWAYS_ACTIVE_LAUNCH;
+        engineConfiguration->launchRpm = 3000;
+        engineConfiguration->launchRpmWindow = 500;
+        engineConfiguration->launchRpmThreshold = 0;
+        engineConfiguration->launchSpeedThreshold = 0;
+        engineConfiguration->launchTpsThreshold = 50;
+        engineConfiguration->launchSparkCutEnable = true;
+        engineConfiguration->launchFuelCutEnable = false;
+        Sensor::setMockValue(SensorType::DriverThrottleIntent, 80);
+        engine->rpmCalculator.setRpmValue(3100);
+        engine->periodicFastCallback();
+        ASSERT_TRUE(engine->launchController.isLaunchOrPreLaunchCondition());
+        ASSERT_FLOAT_EQ(1, engine->hardSparkLimiter.getTargetSkipRatio());
+
+        engineConfiguration->launchControlEnabled = false;
+        Sensor::setMockValue(SensorType::DriverThrottleIntent, 0);
+        engine->rpmCalculator.setRpmValue(1000);
+        for (int i = 0; i < 10; i++) {
+            advanceTimeUs(10000);
+            engine->periodicFastCallback();
+        }
+        ASSERT_FALSE(engine->launchController.isLaunchOrPreLaunchCondition());
+        EXPECT_FALSE(engine->launchController.isLaunchCondition);
+        EXPECT_FALSE(engine->launchController.isPreLaunchCondition);
+        EXPECT_FALSE(engine->launchController.isLaunchLatched);
+        EXPECT_FLOAT_EQ(0, engine->launchController.getSparkSkipRatio());
+        EXPECT_FLOAT_EQ(0, engine->hardSparkLimiter.getTargetSkipRatio());
+        for (int i = 0; i < 10; i++) {
+            EXPECT_FALSE(engine->hardSparkLimiter.shouldSkip());
+        }
+    }
+
 }

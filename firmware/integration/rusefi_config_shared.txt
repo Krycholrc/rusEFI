@@ -66,6 +66,11 @@
 #define LUA_GAUGE_COUNT 8
 
 
+! Full gauge range for signed 16-bit telemetry scaled by 0.1 per count.
+! Minimum = -32768 * 0.1; maximum = 32767 * 0.1.
+#define GAUGE_S16_TENTHS_MIN -3276.8
+#define GAUGE_S16_TENTHS_MAX 3276.7
+
 #define GAUGE_NAME_VERSION "firmware"
 #define GAUGE_NAME_UPTIME "Uptime"
 ! WARNING! THIS GAUGE NAME IS PART of REO integration API
@@ -102,6 +107,7 @@
 #define GAUGE_NAME_VVS "Vehicle Speed"
 #define GAUGE_NAME_GEAR_RATIO "Gearbox Ratio"
 #define GAUGE_NAME_DETECTED_GEAR "Detected Gear"
+#define GAUGE_NAME_TRANS_SLIP "Transmission Slip"
 #define GAUGE_NAME_TURBO_SPEED "Turbocharger Speed"
 #define GAUGE_NAME_VBAT "VBatt"
 #define GAUGE_NAME_VIGN "VIgn"
@@ -164,7 +170,7 @@
 #define INDICATOR_NAME_CLUTCH_UP "Clutch: up"
 #define INDICATOR_NAME_CLUTCH_DOWN "Clutch: down"
 #define INDICATOR_NAME_BRAKE_DOWN "Brake switch"
-#define INDICATOR_NAME_AC_SWITCH "AC switch"
+#define INDICATOR_NAME_AC_SWITCH "AC: switch"
 
 ! SD card status output channel names: single source of truth shared between the
 ! output_channels.txt bit fields, tunerstudio.template.ini indicators and java_console
@@ -213,8 +219,8 @@
 #define GAUGE_NAME_FUEL_LTFT_2 "Long Term Fuel Trim Bank 2"
 #define GAUGE_NAME_FUEL_LTFT_ACC_1 "LTFT learned accumulator: Bank 1"
 #define GAUGE_NAME_FUEL_LTFT_ACC_2 "LTFT learned accumulator: Bank 2"
-#define GAUGE_NAME_FUEL_WALL_AMOUNT "Fuel: wall amount"
-#define GAUGE_NAME_FUEL_WALL_CORRECTION "Fuel: wall correction"
+#define GAUGE_NAME_FUEL_WALL_AMOUNT "Fuel Wall: amount"
+#define GAUGE_NAME_FUEL_WALL_CORRECTION "Fuel Wall: correction"
 #define GAUGE_NAME_FUEL_LOAD "Fuel: Load"
 #define GAUGE_NAME_FUEL_CONSUMPTION "Fuel: Total consumed"
 #define GAUGE_NAME_FUEL_FLOW "Fuel: Flow rate"
@@ -273,3 +279,7 @@
 #define GAUGE_NAME_DEBUG_I5 "debug i5"
 
 #define DIALOG_NAME_VEHICLE_INFORMATION "Vehicle Information"
+
+! UI input selection sentinels; no ECU storage or behavior change.
+#define TRANSIENT_INPUT_NONE 0
+#define TRANSIENT_INPUT_INVALID 1

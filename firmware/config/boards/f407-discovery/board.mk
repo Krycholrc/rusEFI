@@ -17,6 +17,7 @@ endif
 
 BUNDLE_OPENOCD = yes
 
+
 # User can configure LIN/K-line interface
 #DDEFS += -DEFI_KLINE=TRUE
 #DDEFS += -DKLINE_SERIAL_DEVICE_RX=C11 -DKLINE_SERIAL_DEVICE_TX=C10

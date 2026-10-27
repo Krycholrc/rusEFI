@@ -67,9 +67,10 @@ static const uint16_t recordLength = computeFieldsRecordLength();
 // which is why mmc_card.cpp opens log files with FA_CREATE_ALWAYS (truncate).
 size_t writeFileHeader(Writer& outBuffer) {
 	size_t writen = 0;
-	char buffer[Types::Header::Size];
+	// Binary header bytes must represent the full 0..255 range, independent of char signedness.
+	uint8_t buffer[Types::Header::Size];
 	// File format: MLVLG\0
-	strncpy(buffer, "MLVLG", 6);
+	memcpy(buffer, "MLVLG", 6);
 
 	// Format version = 02
 	buffer[6] = 0;
@@ -104,7 +105,7 @@ size_t writeFileHeader(Writer& outBuffer) {
 	buffer[22] = fieldsCount >> 8;
 	buffer[23] = fieldsCount;
 
-	outBuffer.write(buffer, Types::Header::Size);
+	outBuffer.write(reinterpret_cast<const char*>(buffer), Types::Header::Size);
 	writen += Types::Header::Size;
 
 	// Write the actual logger fields, offset by header size (24)
@@ -121,6 +122,11 @@ static uint8_t blockRollCounter = 0;
 // 16-bit timestamp at 10us resolution), then every field's current value,
 // then a 1-byte checksum (plain sum of all payload bytes).
 size_t writeSdBlock(Writer& outBuffer) {
+#if EFI_UNIT_TEST
+	if (engine == nullptr) {
+		throw std::runtime_error{"Engine pointer is nullptr in writeSdBlock"};
+	}
+#endif
 	size_t writen = 0;
 	static char buffer[16];
 
@@ -147,34 +153,7 @@ size_t writeSdBlock(Writer& outBuffer) {
 
 	uint8_t sum = 0;
 	for (size_t fieldIndex = 0; fieldIndex < efi::size(fields); fieldIndex++) {
-		#if EFI_UNIT_TEST
-			if (engine == nullptr) {
-				throw std::runtime_error{"Engine pointer is nullptr in writeSdBlock"};
-			}
-
-			// For tests a global Engine pointer is initialised with the nullptr, and tests that do require it
-			// create their own instance and set up the global pointer accordingly.
-			// Global static const array of fields in the generated file log_fields_generated.h has fields with
-			// addresses const-evaluated against 'nullptr' engine, which effectively means offsets in Engine struct,
-			// so if that is the case, we need to account for the offset to whatever
-			// real current engine pointer is set to.
-			// In tests, we are dealing with ELF on linux, and as far as I'm aware, there are no distributions
-			// where the default linker config can map smth before the 4 MB address.
-			// If in doubt, check your system for a min text-segment with "ld --verbose | grep -A20 ENTRY"
-			// Engine struct is lower than 4MB in size, so we can compare field address against Engine size
-			// to find out whether field address was initialised against nullptr engine or not.
-
-			constexpr auto engineObjectSize{ sizeof(Engine) };
-			static_assert(engineObjectSize < 0x400000);
-
-			auto const currentFieldAddress{ reinterpret_cast<uintptr_t>(fields[fieldIndex].getAddr()) };
-			auto const fieldNeedsOffset{ currentFieldAddress < engineObjectSize };
-			void* const offset{ fieldNeedsOffset ? engine : nullptr };
-		#else
-			void* const offset{ nullptr };
-		#endif
-
-		size_t entrySize = fields[fieldIndex].writeData(buffer, offset);
+		size_t entrySize = fields[fieldIndex].writeData(buffer);
 
 		for (size_t byteIndex = 0; byteIndex < entrySize; byteIndex++) {
 			// "CRC" at the end is just the sum of all bytes
@@ -225,22 +204,6 @@ void forEachField(const std::function<void(const Entries::Field&)>& callback) {
 	for (size_t i = 0; i < efi::size(fields); i++) {
 		callback(fields[i]);
 	}
-}
-
-void* getUnitTestFieldOffset(const Entries::Field& field) {
-#if EFI_UNIT_TEST
-	if (engine == nullptr) {
-		return nullptr;
-	}
-	constexpr auto engineObjectSize{ sizeof(Engine) };
-	static_assert(engineObjectSize < 0x400000);
-	auto const currentFieldAddress{ reinterpret_cast<uintptr_t>(field.getAddr()) };
-	auto const fieldNeedsOffset{ currentFieldAddress < engineObjectSize };
-	return fieldNeedsOffset ? engine : nullptr;
-#else
-	(void)field;
-	return nullptr;
-#endif
 }
 
 } /* namespace MLG */

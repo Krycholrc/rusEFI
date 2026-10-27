@@ -106,6 +106,22 @@ loggers runs, chosen by `engineConfiguration->sdTriggerLog`:
   1-byte additive checksum.
 - The field list is the generated `log_fields_generated.h`; count is reported by
   `sdinfo` as "SD card fields".
+- Enum fields in mapped live-data fragments are logged as numeric values using
+  their underlying integer width and signedness. The MLG file does not include
+  enum value names.
+- `[tag:live_data_sd_mapping]` `LiveData.yaml` uses `engineModule` to expose a
+  module's generated state to SD and Lua. SD descriptors remain constant:
+  firmware stores direct addresses, while simulator/tests resolve the current
+  engine and active mock on each read. Bit offsets are relative to the generated
+  state subobject. Explicit `constexpr` expressions cover other sources and are
+  also evaluated lazily on hosts. Feature guards still control field availability;
+  a mock interface must expose the state to support logging its replacement.
+- `[tag:live_data_output_scale]` Every exported numeric field automatically
+  uses its constant INI scale/offset in the descriptor: `(raw + offset) * scale`.
+  STFT bank 1/2 and dwell deviation therefore display `0.95`, `1.00`, `1.05`
+  as approximately `-5`, `0`, `5` percent. Payloads retain raw storage values,
+  and packed channels keep their existing packing scale. This does not add
+  missing fields or change the metadata stored in older log files.
 - Write rate: `sdCardLogFrequency` Hz, clamped to 1..250, paced with
   `chThdSleepUntilWindowed()` in `mlgLogger()`.
 - `f_sync` runs only every `F_SYNC_FREQUENCY` (10) lines, not per line.

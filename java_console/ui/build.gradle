@@ -22,8 +22,6 @@ dependencies {
 
     implementation global_libs.antlr
     implementation 'com.miglayout:miglayout-swing:4.1'
-    implementation 'org.bidib.jbidib.eu.hansolo:SteelSeries:3.9.31.2'
-    implementation files('../lib/trident-6.2.jar')
 /*
     implementation files('../lib/dfu/dfu_java.jar')
     implementation files('../lib/dfu/IntelHexParser.jar')
@@ -45,6 +43,14 @@ tasks.register('runLLMTabSandbox', JavaExec) {
     if (project.hasProperty('llmStore')) {
         args project.property('llmStore')
     }
+}
+
+tasks.register('runLogViewerSandbox', JavaExec) {
+    dependsOn testClasses
+    group = 'Execution'
+    description = 'Open the bundled time-series log in the standalone log viewer'
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.rusefi.ui.logview.LogViewerSandbox'
 }
 
 // Explicit release check: downloads the published ZIP, without ECU access or ChatGPT authorization.

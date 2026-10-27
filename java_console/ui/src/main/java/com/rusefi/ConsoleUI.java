@@ -2,6 +2,7 @@ package com.rusefi;
 
 import com.devexperts.logging.FileLogger;
 import com.devexperts.logging.Logging;
+import com.formdev.flatlaf.FlatClientProperties;
 import com.opensr5.ConfigurationImage;
 import com.opensr5.ini.IniFileModel;
 import com.rusefi.autodetect.PortDetector;
@@ -22,13 +23,20 @@ import com.rusefi.ui.basic.SingleAsyncJobExecutor;
 import com.rusefi.ui.basic.StatusPanelWithProgressBar;
 import com.rusefi.ui.basic.TuneManagementTab;
 import com.rusefi.ui.console.MainFrame;
+import com.rusefi.ui.console.SavedTab;
+import com.rusefi.ui.obd.ObdCodesPane;
 import com.rusefi.ui.console.TabbedPanel;
+import com.rusefi.ui.console.ToolTabs;
 import com.rusefi.ui.engine.EngineSnifferPanel;
+import com.rusefi.ui.logview.LogViewerHost;
 import com.rusefi.ui.lua.LuaScriptPanel;
 import com.rusefi.ui.plugins.ConsoleTabProvider;
 import com.rusefi.ui.util.JustOneInstance;
 import com.rusefi.ui.widgets.ConnectionStatusIcon;
+import com.rusefi.ui.widgets.JoinedButtons;
+import com.rusefi.ui.widgets.WandIcon;
 import com.rusefi.ui.widgets.StatusPanel;
+import com.rusefi.ui.widgets.tune.CalibrationPanelWorkspace;
 import com.rusefi.ui.wizard.WizardCatalog;
 import com.rusefi.ui.wizard.WizardContainer;
 import com.rusefi.ui.wizard.WizardStep;
@@ -76,11 +84,9 @@ import static com.rusefi.ui.util.UiUtils.createOnTopParent;
  */
 public class ConsoleUI {
     private static final Logging log = getLogging(ConsoleUI.class);
-    private static final int DEFAULT_TAB_INDEX = 0;
     private static final String WIKI_URL = "https://wiki.rusefi.com/rusEFI-logs-folder";
     private static final String AUTO_LAUNCH_WIZARD = "auto_launch_wizard";
 
-    public static final String TAB_INDEX = "main_tab";
     protected static final String PORT_KEY = "port";
     protected static final String SPEED_KEY = "speed";
     public static final String TITLE = "rusEFI";
@@ -99,6 +105,7 @@ public class ConsoleUI {
      */
     private final Map<Component, ActionListener> tabSelectedListeners = new HashMap<>();
     private GaugesPanel gaugesPanel;
+    private LogViewerHost logViewer;
     private TuningPane tuningPane;
     private Component gaugesTab;
     private Component tuningTab;
@@ -273,10 +280,20 @@ public class ConsoleUI {
         CardLayout rootCardLayout = (CardLayout) rootPanel.getLayout();
 
         JButton launchWizardButton = getLaunchWizardButton(mainFrame, rootPanel, wizardContainer, rootCardLayout);
+        // Blue only while the connected ECU has unfinished wizard steps (the same check that
+        // auto-launches the wizard); a normal button otherwise.
+        Runnable refreshLaunchWizardHighlight = () -> setLaunchWizardHighlight(launchWizardButton,
+            ConnectionStatusLogic.INSTANCE.getValue() == ConnectionStatusValue.CONNECTED
+                && uiContext.getBinaryProtocol() != null
+                && uiContext.getBinaryProtocol().getControllerConfiguration() != null
+                && wizardContainer.hasIncompleteSteps());
+        ConnectionStatusLogic.INSTANCE.addAndFireListener(isConnected ->
+            SwingUtilities.invokeLater(refreshLaunchWizardHighlight));
 
         wizardContainer.setOnWizardExit(() -> {
             rootCardLayout.show(rootPanel, "console");
             setNonTabContentActive(false);
+            refreshLaunchWizardHighlight.run();
         });
         wizardContainer.setMessageHandler(mainFrame::showMessageOverlay);
         wizardContainer.setOnDontShowAgain(() -> {
@@ -312,13 +329,8 @@ public class ConsoleUI {
             });
         });
 
-        JPanel cornerPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 5, 0));
-        cornerPanel.setOpaque(false);
-        cornerPanel.add(connectionStatus);
-        if (UiProperties.isLaunchWizardEnabled()) {
-            cornerPanel.add(launchWizardButton);
-        }
-        tabbedPane.setCornerComponent(cornerPanel);
+        tabbedPane.setCornerComponent(createCornerPanel(connectionStatus,
+            UiProperties.isLaunchWizardEnabled() ? launchWizardButton : null));
 
         // ---------------
 
@@ -348,17 +360,36 @@ public class ConsoleUI {
         uiContext.DetachedRepositoryINSTANCE.load();
         // Heavy tabs (Lua, Tuning) are lazy-built unless they are the user's last-opened tab, which
         // will be shown immediately on startup — in that case build eagerly (#9715).
-        int savedTabIndex = getConfig().getRoot().getIntProperty(TAB_INDEX, DEFAULT_TAB_INDEX);
+        SavedTab savedTab = SavedTab.read(getConfig().getRoot());
+        // developer tabs opened from the Tools menu instead of always sitting in the tab row
+        ToolTabs toolTabs = new ToolTabs(tabbedPane);
         if (isOffline || !linkManager.isLogViewer()) {
             gaugesPanel = new GaugesPanel(uiContext, getConfig().getRoot().getChild("gauges"));
             gaugesTab = gaugesPanel.getContent();
             tabbedPane.addTab("Gauges", gaugesTab);
 
+            // record a log, then view it: near the live gauges, after Tuning which is inserted between them
+            logViewer = new LogViewerHost(getConfig().getRoot().getChild("log_viewer"));
+            logViewer.setConfigSaver(() -> getConfig().save());
+            logViewer.setIniSupplier(() -> uiContext.iniFileState.getIniFileModel());
+            // the histogram can bin by a tune table's axes: the working tune, offline edits included
+            logViewer.setTuneSupplier(uiContext::getCurrentConfigurationImage);
+            // the sidebar lists the logging profiles and can save a list as one
+            logViewer.setLoggingProfiles(mainFrame.loggingProfiles());
+            tabbedPane.addTab(LogViewerHost.TITLE, logViewer);
+            mainFrame.setLogViewerActions(file -> {
+                tabbedPane.selectTab(LogViewerHost.TITLE);
+                logViewer.open(file);
+            }, () -> {
+                tabbedPane.selectTab(LogViewerHost.TITLE);
+                logViewer.chooseAndOpen();
+            }, logViewer::recordingStopped);
+
             MessagesPane messagesPane = new MessagesPane(uiContext, getConfig().getRoot().getChild("messages"));
-            tabbedPaneAdd("Messages", messagesPane.getContent(), messagesPane.getTabSelectedListener());
+            toolTabAdd(toolTabs, "Messages", messagesPane.getContent(), messagesPane.getTabSelectedListener());
 
             int luaIndex = tabbedPane.tabbedPane.getTabCount();
-            if (luaIndex == savedTabIndex) {
+            if (savedTab.is("Lua Scripting", luaIndex)) {
                 LuaScriptPanel luaScriptPanel = new LuaScriptPanel(uiContext, getConfig().getRoot().getChild("lua"));
                 tabbedPaneAdd("Lua Scripting", luaScriptPanel.getPanel(), luaScriptPanel.getTabSelectedListener());
             } else {
@@ -373,8 +404,9 @@ public class ConsoleUI {
         }
 
         if (UiProperties.isEngineSnifferEnabled()) {
-            tabbedPaneAdd("Engine Sniffer", engineSnifferPanel.getPanel(), engineSnifferPanel.getTabSelectedListener());
+            toolTabAdd(toolTabs, "Engine Sniffer", engineSnifferPanel.getPanel(), engineSnifferPanel.getTabSelectedListener());
         }
+        mainFrame.setToolTabs(toolTabs);
 
 
 
@@ -467,7 +499,9 @@ console live data tab is broken #8402
                 updateOutputPollingForSelectedTab();
             };
 
-            int tuningIndex = tabbedPane.tabbedPane.getTabCount();
+            // second, right after Gauges; built here because it needs the Pinout and Device objects
+            int tuningIndex = gaugesTab != null ? tabbedPane.tabbedPane.indexOfComponent(gaugesTab) + 1
+                : tabbedPane.tabbedPane.getTabCount();
             tuningTab = new InitOnFirstPaintPanel() {
                 @Override
                 protected JPanel createContent() {
@@ -477,17 +511,24 @@ console live data tab is broken #8402
                     return wrapper;
                 }
             }.getContent();
-            tabbedPane.addTab("Tuning", tuningTab);
+            tabbedPane.insertTab("Tuning", tuningTab, tuningIndex);
             // Until Tuning is built, the menu actions build it on first click then delegate; once
             // built, buildTuning re-points the menu at the real actions.
             mainFrame.setTuneActions(
                 lazyTuneAction(LoadTuneHelper.LOAD_TUNE_TEXT, buildTuning, () -> tuningHolder[0].getLoadTuneAction()),
                 lazyTuneAction(LoadTuneHelper.SAVE_TUNE_TEXT, buildTuning, () -> tuningHolder[0].getSaveTuneAction()));
 
+            // Restore detached calibration windows even when another tab was selected at exit.
+            if (getConfig().getRoot().getChild("tuning").getChild(
+                    CalibrationPanelWorkspace.CONFIG_KEY).getIntProperty("count", 0) > 0) {
+                buildTuning.run();
+                tuningHolder[0].restoreDetachedPanels(mainFrame.getFrame().getFrame());
+            }
+
             if (UiProperties.isKnockAnalyzerEnabled()) {
                 tabbedPane.addTab("Knock Analyzer", new KnockPane(uiContext).getContent());
             }
-            SlcanTabController slcanTabs = new SlcanTabController(tabbedPane.tabbedPane,
+            SlcanTabController slcanTabs = new SlcanTabController(tabbedPane.tabbedPane, tabbedPane::addTab,
                 () -> new SlcanTab(uiContext, mainFrame::showMessageOverlay));
             Runnable refreshSlcanTab = () -> {
                 // Use only the current connection, never IniFileState's cached/offline fallback.
@@ -530,6 +571,11 @@ console live data tab is broken #8402
                 devicePane.triggerAutoUpdate();
             });
 
+            if (!isOffline && UiProperties.isObdCodesEnabled()) {
+                // the last built-in tab, so a tab index saved by older consoles still finds its tab (SavedTab)
+                tabbedPane.addTab(ObdCodesPane.TITLE, new ObdCodesPane().getContent());
+            }
+
             addCustomTabs();
 
             AtomicReference<AvailableHardware> tuneHardware = new AtomicReference<>();
@@ -559,7 +605,7 @@ console live data tab is broken #8402
             });
 
             // Build eagerly if Tuning was the user's last-opened tab (shown immediately on startup).
-            if (tuningIndex == savedTabIndex) {
+            if (savedTab.is("Tuning", tuningIndex)) {
                 buildTuning.run();
             }
         }
@@ -587,8 +633,13 @@ console live data tab is broken #8402
 */
 
         if (isOffline || !LinkManager.isLogViewerMode(port)) {
-            if (savedTabIndex < tabbedPane.tabbedPane.getTabCount())
-                tabbedPane.tabbedPane.setSelectedIndex(savedTabIndex);
+            // a tool tab that was open and selected at exit opens again
+            for (String title : toolTabs.getTitles()) {
+                if (savedTab.is(title, -1)) {
+                    toolTabs.open(title);
+                }
+            }
+            savedTab.select(tabbedPane.tabbedPane);
         }
 
         tabbedPane.tabbedPane.addChangeListener(new ChangeListener() {
@@ -641,9 +692,58 @@ console live data tab is broken #8402
         return false;
     }
 
+    /**
+     * Connection badge and Launch Wizard at the right end of the tab row. Its right inset matches
+     * the Gauges toolbar (JoinedButtons.ROW_END_INSET), so Launch Wizard's right edge lines up
+     * with Edit dashboard's.
+     */
+    static JPanel createCornerPanel(Component connectionStatus, JButton launchWizardButton) {
+        // GridBagLayout centres the controls vertically in the tab row
+        JPanel cornerPanel = new JPanel(new GridBagLayout());
+        cornerPanel.setOpaque(false);
+        cornerPanel.setBorder(BorderFactory.createEmptyBorder(0, 0, 0, JoinedButtons.ROW_END_INSET));
+        // FlatLaf gives the trailing component the free width of the tab row: fill it on the left
+        GridBagConstraints filler = new GridBagConstraints();
+        filler.weightx = 1;
+        cornerPanel.add(Box.createHorizontalGlue(), filler);
+        GridBagConstraints c = new GridBagConstraints();
+        cornerPanel.add(connectionStatus, c);
+        if (launchWizardButton != null) {
+            c.insets = new Insets(0, JoinedButtons.ROW_GAP, 0, 0);
+            cornerPanel.add(launchWizardButton, c);
+        }
+        return cornerPanel;
+    }
+
+    /**
+     * Same shape as the Gauges "Edit dashboard" button: line icon, 36 px tall, as wide as its
+     * text [tag:console_theme].
+     */
+    static JButton newLaunchWizardButton() {
+        JButton button = new JButton("Launch Wizard", new WandIcon()) {
+            @Override
+            public Dimension getPreferredSize() {
+                Dimension size = super.getPreferredSize();
+                size.height = JoinedButtons.HEIGHT;
+                return size;
+            }
+        };
+        button.setIconTextGap(8);
+        button.setMargin(new Insets(0, 14, 0, 14));
+        return button;
+    }
+
+    /** Blue main-action style from the theme files [tag:console_theme] while setup is unfinished. */
+    static void setLaunchWizardHighlight(JButton launchWizardButton, boolean wizardIncomplete) {
+        launchWizardButton.putClientProperty(FlatClientProperties.STYLE_CLASS, wizardIncomplete ? "primary" : null);
+        launchWizardButton.setToolTipText(wizardIncomplete
+            ? "Some setup steps are not finished yet"
+            : "Step-by-step setup of the connected ECU");
+    }
+
     private @NotNull JButton getLaunchWizardButton(MainFrame mainFrame, JPanel rootPanel,
                                                     WizardContainer wizardContainer, CardLayout rootCardLayout) {
-        JButton launchWizardButton = new JButton("Launch Wizard");
+        JButton launchWizardButton = newLaunchWizardButton();
         launchWizardButton.addActionListener(e -> {
             if (ConnectionStatusLogic.INSTANCE.getValue() != ConnectionStatusValue.CONNECTED) {
                 mainFrame.showMessageOverlay("Please connect to an ECU before launching the wizard.");
@@ -745,6 +845,14 @@ console live data tab is broken #8402
     private void tabbedPaneAdd(String title, JComponent component, ActionListener tabSelectedListener) {
         tabSelectedListeners.put(component, tabSelectedListener);
         tabbedPane.addTab(title, component);
+    }
+
+    /**
+     * Registers a Tools menu tab with its activation listener; the tab is added only when opened
+     */
+    private void toolTabAdd(ToolTabs toolTabs, String title, JComponent component, ActionListener tabSelectedListener) {
+        tabSelectedListeners.put(component, tabSelectedListener);
+        toolTabs.register(title, component);
     }
 
     private void updateOutputPollingForSelectedTab() {

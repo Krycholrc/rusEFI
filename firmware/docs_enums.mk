@@ -1,4 +1,5 @@
-# TODO: are we missing a ton of .txt file references from LiveData.yaml?!
+# [tag:docs_enums_inputs] checked by DocsEnumsInputsTest: every .txt referenced by integration/LiveData.yaml (name + folder/input_folder, prepend) and every
+# input of gen_live_documentation.sh must be listed here, otherwise editing it does not regenerate the ini
 DOCS_ENUMS_INPUTS = \
   $(PROJECT_DIR)/integration/rusefi_config.txt \
   $(PROJECT_DIR)/integration/rusefi_config_shared.txt \
@@ -6,22 +7,53 @@ DOCS_ENUMS_INPUTS = \
   $(PROJECT_DIR)/integration/config_page_3.txt \
   $(PROJECT_DIR)/integration/config_page_4.txt \
   $(PROJECT_DIR)/console/binary/output_channels.txt \
-  $(PROJECT_DIR)//tunerstudio/gauge_declarations.ini \
+  $(PROJECT_DIR)/tunerstudio/gauge_declarations.ini \
+  $(PROJECT_DIR)/controllers/actuators/vvt.txt \
   $(PROJECT_DIR)/controllers/engine_cycle/knock_controller.txt \
+  $(PROJECT_DIR)/controllers/engine_cycle/live_data_rotational_idle.txt \
   $(PROJECT_DIR)/controllers/engine_cycle/prime_injection.txt \
   $(PROJECT_DIR)/controllers/trigger/trigger_central.txt \
   $(PROJECT_DIR)/controllers/long_term_fuel_trim_state.txt \
+  $(PROJECT_DIR)/controllers/math/closed_loop_idle.txt \
+  $(PROJECT_DIR)/controllers/math/lambda_monitor.txt \
   $(PROJECT_DIR)/controllers/math/short_term_fuel_trim_state.txt \
+  $(PROJECT_DIR)/controllers/modules/fuel_pump/fuel_pump_control.txt \
   $(PROJECT_DIR)/controllers/trigger/trigger_state.txt \
   $(PROJECT_DIR)/controllers/trigger/trigger_state_primary.txt \
   $(PROJECT_DIR)/controllers/algo/shift_torque_reduction_state.txt \
+  $(PROJECT_DIR)/controllers/algo/ignition/ignition_state.txt \
+  $(PROJECT_DIR)/controllers/algo/tps_accel_state.txt \
   $(PROJECT_DIR)/controllers/algo/launch_control_state.txt \
+  $(PROJECT_DIR)/controllers/algo/antilag_system_state.txt \
+  $(PROJECT_DIR)/controllers/sensors/sent_state.txt \
+  $(PROJECT_DIR)/controllers/sensors/wideband_state.txt \
   $(PROJECT_DIR)/controllers/engine_cycle/high_pressure_fuel_pump.txt \
   $(PROJECT_DIR)/controllers/actuators/idle_state.txt \
   $(PROJECT_DIR)/controllers/actuators/electronic_throttle.txt \
   $(PROJECT_DIR)/controllers/algo/misfire_detection_state.txt \
+  $(PROJECT_DIR)/controllers/algo/wall_fuel_state.txt \
+  $(PROJECT_DIR)/controllers/algo/nitrous_control_state.txt \
   $(PROJECT_DIR)/hw_layer/drivers/gpio/mc33810_state.txt \
   $(PROJECT_DIR)/hw_layer/drivers/adc/ads7128_state.txt \
+  $(PROJECT_DIR)/controllers/algo/fuel/fuel_computer.txt \
+  $(PROJECT_DIR)/controllers/algo/fuel/injector_model.txt \
+  $(PROJECT_DIR)/controllers/algo/engine_state.txt \
+  $(PROJECT_DIR)/controllers/tcu/tcu_controller.txt \
+  $(PROJECT_DIR)/controllers/math/throttle_model.txt \
+  $(PROJECT_DIR)/controllers/actuators/boost_control.txt \
+  $(PROJECT_DIR)/controllers/actuators/ac_control.txt \
+  $(PROJECT_DIR)/controllers/actuators/main_relay.txt \
+  $(PROJECT_DIR)/controllers/actuators/dc_motors.txt \
+  $(PROJECT_DIR)/controllers/modules/fan_control/fan_control.txt \
+  $(PROJECT_DIR)/controllers/modules/example_module/live_data_example.txt \
+  $(PROJECT_DIR)/controllers/modules/vvl_controller/vvl_controller_state.txt \
+  $(PROJECT_DIR)/controllers/modules/injector_deadtime_autotune/injector_deadtime_autotune_state.txt \
+  $(PROJECT_DIR)/controllers/modules/rolling_launch/rolling_launch_state.txt \
+  $(PROJECT_DIR)/controllers/modules/burst_knock/burst_knock_state.txt \
+  $(PROJECT_DIR)/controllers/modules/engine_state_machine/engine_state_machine_state.txt \
+  $(PROJECT_DIR)/controllers/modules/wot_enrichment/wot_enrichment_state.txt \
+  $(PROJECT_DIR)/integration/rusefi_config_trigger.txt \
+  $(PROJECT_DIR)/integration/ts_protocol.txt \
   $(PROJECT_DIR)/integration/LiveData.yaml \
   $(PROJECT_DIR)/controllers/sensors/sensor_type.h \
   $(PROJECT_DIR)/controllers/trigger/decoders/sync_edge.h \
@@ -83,6 +115,11 @@ endif
 
 ifneq ("$(wildcard $(BOARD_DIR)/firmware/extra.txt)","")
   DOCS_ENUMS_INPUTS += $(BOARD_DIR)/firmware/extra.txt
+endif
+
+# LiveDataProcessor.extra_prepend in gen_live_documentation.sh
+ifneq ("$(wildcard $(BOARD_DIR)/prepend.txt)","")
+  DOCS_ENUMS_INPUTS += $(BOARD_DIR)/prepend.txt
 endif
 
 ifneq ("$(wildcard $(BOARD_DIR)/board_config.txt)","")

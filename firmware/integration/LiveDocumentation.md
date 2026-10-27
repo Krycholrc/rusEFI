@@ -15,4 +15,28 @@ Implementation details:
 
 https://www.youtube.com/watch?v=n_pqH-3P3Qc
 
-TODO: Live Documentation with branching sections. 
+TODO: Live Documentation with branching sections.
+
+### Scaling model values for telemetry
+
+`[tag:live_data_output_scale]` SD logging and Lua `getOutput()` automatically
+apply every exported field's constant INI scale and offset. The field
+definition is the single source for the conversion:
+`engineering = (raw + offset) * scale`. Plain C++ fields retain
+their native units; SD writes the conversion into the log header, while Lua
+converts only when the value is requested. `autoscale` fields already apply
+the packing scale through `scaled_channel` and receive no additional
+multiplier. SD offsets remain in raw payload units; Lua adds `offset *
+packingScale` to the already-unpacked value. Neither path changes stored data.
+
+Conversions support finite constant scales and offsets, including simple
+division. Dynamic expressions and non-finite constants fail generation.
+Missing conversion metadata defaults to scale 1 and offset 0. For example,
+a float stored in grams can declare `"mg", 1000, 0` in
+its field metadata. A raw trim multiplier can declare `"%", 100, -1`, so
+`0.95`, `1.00` and `1.05` display as approximately `-5`, `0` and `5` percent.
+Existing Lua scripts must use the declared engineering units:
+`dwellActualRatio` returns percent
+deviation, and the `misfire*Us` timing outputs return milliseconds despite
+their historical names. Field coverage is unchanged; a fragment still needs
+the existing SD/Lua source wiring to be exported.

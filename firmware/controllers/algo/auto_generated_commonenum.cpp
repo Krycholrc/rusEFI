@@ -1,6 +1,6 @@
 #include "global.h"
 #include "rusefi_enums.h"
-// was generated automatically by rusEFI tool  from rusefi_enums.h // by enum_to_string.jar tool on Wed Oct 14 19:43:31 UTC 2026
+// was generated automatically by rusEFI tool  from rusefi_enums.h // by enum_to_string.jar tool on Sun Oct 18 13:08:52 UTC 2026
 // see also gen_config_and_enums.bat
 
 
@@ -584,6 +584,17 @@ const char *getDc_function_e(dc_function_e value) {
 	}
 	return NULL;
 }
+const char *getDfco_fuel_cut_mode_e(dfco_fuel_cut_mode_e value) {
+	switch (value) {
+		case dfco_fuel_cut_mode_e::Both:
+			return "Both";
+		case dfco_fuel_cut_mode_e::Decel:
+			return "Decel";
+		case dfco_fuel_cut_mode_e::Overrun:
+			return "Overrun";
+	}
+	return NULL;
+}
 const char *getDisplay_mode_e(display_mode_e value) {
 	switch (value) {
 		case DM_HD44780:
@@ -612,6 +623,17 @@ const char *getEgo_sensor_e(ego_sensor_e value) {
 	}
 	return NULL;
 }
+const char *getFan_ac_mode_e(fan_ac_mode_e value) {
+	switch (value) {
+		case fan_ac_mode_e::Disabled:
+			return "Disabled";
+		case fan_ac_mode_e::Pressure:
+			return "Pressure";
+		case fan_ac_mode_e::Relay:
+			return "Relay";
+	}
+	return NULL;
+}
 const char *getFt_region_e(ft_region_e value) {
 	switch (value) {
 		case ftRegionCruise:
@@ -633,6 +655,17 @@ const char *getFuel_pressure_sensor_mode_e(fuel_pressure_sensor_mode_e value) {
 			return "FPM_Differential";
 		case FPM_Gauge:
 			return "FPM_Gauge";
+	}
+	return NULL;
+}
+const char *getFuel_pump_mode_e(fuel_pump_mode_e value) {
+	switch (value) {
+		case fuel_pump_mode_e::Dual:
+			return "Dual";
+		case fuel_pump_mode_e::Pwm:
+			return "Pwm";
+		case fuel_pump_mode_e::Single:
+			return "Single";
 	}
 	return NULL;
 }
@@ -1021,6 +1054,26 @@ const char *getPin_output_mode_e(pin_output_mode_e value) {
 			return "OM_OPENDRAIN";
 		case OM_OPENDRAIN_INVERTED:
 			return "OM_OPENDRAIN_INVERTED";
+	}
+	return NULL;
+}
+const char *getSm_clutch_switch_e(sm_clutch_switch_e value) {
+	switch (value) {
+		case sm_clutch_switch_e::ClutchDown:
+			return "ClutchDown";
+		case sm_clutch_switch_e::ClutchUp:
+			return "ClutchUp";
+		case sm_clutch_switch_e::None:
+			return "None";
+	}
+	return NULL;
+}
+const char *getSm_shift_detection_mode_e(sm_shift_detection_mode_e value) {
+	switch (value) {
+		case sm_shift_detection_mode_e::RpmRate:
+			return "RpmRate";
+		case sm_shift_detection_mode_e::VssRate:
+			return "VssRate";
 	}
 	return NULL;
 }

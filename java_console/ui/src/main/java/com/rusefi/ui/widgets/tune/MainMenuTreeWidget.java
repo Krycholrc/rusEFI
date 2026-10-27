@@ -1,11 +1,15 @@
 package com.rusefi.ui.widgets.tune;
 
+import com.formdev.flatlaf.FlatClientProperties;
+import com.formdev.flatlaf.icons.FlatSearchIcon;
 import com.opensr5.ConfigurationImage;
+import com.opensr5.ini.DialogModel;
 import com.opensr5.ini.ExpressionEvaluator;
 import com.opensr5.ini.GroupMenuModel;
 import com.opensr5.ini.IniFileModel;
 import com.opensr5.ini.MenuItem;
 import com.opensr5.ini.MenuModel;
+import com.opensr5.ini.PanelModel;
 import com.opensr5.ini.SeparatorMenuItem;
 import com.opensr5.ini.SubMenuModel;
 import com.rusefi.binaryprotocol.BinaryProtocol;
@@ -22,7 +26,7 @@ import javax.swing.tree.DefaultTreeModel;
 import javax.swing.tree.DefaultTreeSelectionModel;
 import javax.swing.tree.TreePath;
 import java.awt.*;
-import java.awt.event.MouseAdapter;
+import java.awt.event.ActionEvent;
 import java.awt.event.MouseEvent;
 import java.util.*;
 import java.util.List;
@@ -36,12 +40,13 @@ import static com.rusefi.core.ui.AutoupdateUtil.trueLayoutAndRepaint;
 public class MainMenuTreeWidget {
     private final JPanel contentPane = new JPanel(new BorderLayout());
     private final JTree tree;
+    private int keyboardNavigationDirection;
+    private boolean keyboardChildNavigation;
     private final DefaultMutableTreeNode root = new DefaultMutableTreeNode("Menus");
 
     private final JTextField searchField = new JTextField();
     private boolean isUpdatingModel = false;
     private boolean isProcessingSearchSelection = false;
-    private String lastSearchSelectedKey = null;
     private Consumer<SubMenuModel> onSelect;
 
     private final UIContext uiContext;
@@ -85,7 +90,30 @@ public class MainMenuTreeWidget {
             populate(model);
         }
 
-        tree = new JTree(root);
+        tree = new JTree(root) {
+            private TreePath selectionBeforeMousePress;
+            private boolean sawMousePress;
+
+            @Override
+            protected void processMouseEvent(MouseEvent event) {
+                if (event.getID() == MouseEvent.MOUSE_PRESSED) {
+                    selectionBeforeMousePress = getSelectionPath();
+                    sawMousePress = true;
+                }
+                super.processMouseEvent(event);
+                if (event.getID() == MouseEvent.MOUSE_CLICKED) {
+                    TreePath clickedPath = getPathForLocation(event.getX(), event.getY());
+                    TreePath selectedBeforeClick = sawMousePress ? selectionBeforeMousePress : getSelectionPath();
+                    if (clickedPath != null && clickedPath.equals(selectedBeforeClick)) {
+                        // Selection events handle changed pages during mouse press. Only repeat
+                        // the callback for a click on the page that was already selected.
+                        handleSelection(clickedPath);
+                    }
+                    selectionBeforeMousePress = null;
+                    sawMousePress = false;
+                }
+            }
+        };
         tree.setSelectionModel(new DefaultTreeSelectionModel() {
             {
                 setSelectionMode(SINGLE_TREE_SELECTION);
@@ -98,8 +126,9 @@ public class MainMenuTreeWidget {
                     return;
                 }
                 for (TreePath path : paths) {
-                    if (isSelectable(path)) {
-                        super.setSelectionPaths(new TreePath[]{path});
+                    TreePath selectablePath = getSelectablePath(path);
+                    if (selectablePath != null) {
+                        super.setSelectionPaths(new TreePath[]{selectablePath});
                         return;
                     }
                 }
@@ -111,23 +140,22 @@ public class MainMenuTreeWidget {
                     return;
                 }
                 for (TreePath path : paths) {
-                    if (isSelectable(path)) {
-                        super.addSelectionPaths(new TreePath[]{path});
+                    TreePath selectablePath = getSelectablePath(path);
+                    if (selectablePath != null) {
+                        super.addSelectionPaths(new TreePath[]{selectablePath});
                         return;
                     }
                 }
             }
         });
+        installNavigationActions(-1, false, "selectPrevious", "selectPreviousChangeLead", "selectPreviousExtendSelection",
+            "selectLast", "selectLastChangeLead", "selectLastExtendSelection",
+            "scrollUpChangeSelection", "scrollUpChangeLead", "scrollUpExtendSelection");
+        installNavigationActions(1, false, "selectNext", "selectNextChangeLead", "selectNextExtendSelection",
+            "selectFirst", "selectFirstChangeLead", "selectFirstExtendSelection",
+            "scrollDownChangeSelection", "scrollDownChangeLead", "scrollDownExtendSelection");
+        installNavigationActions(1, true, "selectChild", "selectChildChangeLead");
         tree.setToggleClickCount(1);
-        tree.addMouseListener(new MouseAdapter() {
-            @Override
-            public void mouseClicked(MouseEvent e) {
-                TreePath path = tree.getPathForLocation(e.getX(), e.getY());
-                if (path != null) {
-                    handleSelection(path);
-                }
-            }
-        });
         tree.addTreeSelectionListener(e -> {
             if (isUpdatingModel) {
                 return;
@@ -215,8 +243,12 @@ public class MainMenuTreeWidget {
             }
         });
 
-        JPanel topPanel = new JPanel(new BorderLayout());
-        searchField.putClientProperty("JTextField.placeholderText", "search here");
+        JPanel topPanel = new JPanel(new BorderLayout(4, 0));
+        topPanel.setOpaque(false);
+        topPanel.setBorder(BorderFactory.createEmptyBorder(8, 8, 6, 6));
+        searchField.putClientProperty(FlatClientProperties.PLACEHOLDER_TEXT, "Search settings");
+        searchField.putClientProperty(FlatClientProperties.TEXT_FIELD_LEADING_ICON, new FlatSearchIcon());
+        searchField.putClientProperty(FlatClientProperties.TEXT_FIELD_SHOW_CLEAR_BUTTON, true);
         searchField.getDocument().addDocumentListener(new DocumentListener() {
             @Override
             public void insertUpdate(DocumentEvent e) {
@@ -235,24 +267,37 @@ public class MainMenuTreeWidget {
         });
 
         JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 0));
-        JButton expandAll = new JButton(AutoupdateUtil.loadIcon("expand_all16.png"));
+        buttonPanel.setOpaque(false);
+        JButton expandAll = new JButton(TuningStyle.FoldIcon.EXPAND_ALL);
         expandAll.setToolTipText("Expand All");
-        expandAll.setPreferredSize(new Dimension(32, 32));
+        expandAll.putClientProperty(FlatClientProperties.BUTTON_TYPE, FlatClientProperties.BUTTON_TYPE_TOOLBAR_BUTTON);
+        expandAll.setPreferredSize(new Dimension(30, 30));
         expandAll.addActionListener(e -> expandAll(tree, true));
 
-        JButton collapseAll = new JButton(AutoupdateUtil.loadIcon("collapse_all16.png"));
+        JButton collapseAll = new JButton(TuningStyle.FoldIcon.COLLAPSE_ALL);
         collapseAll.setToolTipText("Collapse All");
-        collapseAll.setPreferredSize(new Dimension(32, 32));
+        collapseAll.putClientProperty(FlatClientProperties.BUTTON_TYPE, FlatClientProperties.BUTTON_TYPE_TOOLBAR_BUTTON);
+        collapseAll.setPreferredSize(new Dimension(30, 30));
         collapseAll.addActionListener(e -> expandAll(tree, false));
 
         buttonPanel.add(expandAll);
         buttonPanel.add(collapseAll);
 
-        topPanel.add(searchField, BorderLayout.NORTH);
-        topPanel.add(buttonPanel, BorderLayout.SOUTH);
+        topPanel.add(searchField, BorderLayout.CENTER);
+        topPanel.add(buttonPanel, BorderLayout.EAST);
+
+        // A white sidebar like the Log Viewer's, with a rounded selection (Tree.tuningMenu style).
+        Color sidebar = TuningStyle.sidebarBackground();
+        contentPane.setBackground(sidebar);
+        contentPane.setBorder(BorderFactory.createMatteBorder(0, 0, 0, 1, TuningStyle.separator()));
+        tree.putClientProperty(FlatClientProperties.STYLE_CLASS, "tuningMenu");
+        tree.setBackground(sidebar);
+        JScrollPane treeScroll = new JScrollPane(tree);
+        treeScroll.setBorder(BorderFactory.createEmptyBorder());
+        treeScroll.getViewport().setBackground(sidebar);
 
         contentPane.add(topPanel, BorderLayout.NORTH);
-        contentPane.add(new JScrollPane(tree), BorderLayout.CENTER);
+        contentPane.add(treeScroll, BorderLayout.CENTER);
 
         // Refresh the disabled state as soon as the tune is read from the ECU.
         // If the tree was not populated at startup (no local ini file), populate it now.
@@ -324,7 +369,6 @@ public class MainMenuTreeWidget {
                             // call onSelect only if not disabled
                             if (onSelect != null && !disabledKeys.contains(subMenuToSelect.getKey())) {
                                 onSelect.accept(subMenuToSelect);
-                                lastSearchSelectedKey = subMenuToSelect.getKey();
                             }
 
                             // Defer scroll to after all other events are processed
@@ -343,12 +387,8 @@ public class MainMenuTreeWidget {
             });
         } else {
             if (selectedSubMenu != null && onSelect != null) {
-                // Skip if this is a spurious selection after search (e.g., first menu item auto-selected by the JTree)
-                if (lastSearchSelectedKey != null && !lastSearchSelectedKey.equals(selectedSubMenu.getKey())) {
-                    lastSearchSelectedKey = null;
-                    return;
-                }
-                lastSearchSelectedKey = null;
+                // Search restoration selects the result programmatically with the listener
+                // suspended. The next real selection is user navigation, not a duplicate.
                 // Skip disabled items
                 if (disabledKeys.contains(selectedSubMenu.getKey())) {
                     return;
@@ -357,6 +397,55 @@ public class MainMenuTreeWidget {
             }
             tree.scrollPathToVisible(path);
         }
+    }
+
+    private void installNavigationActions(int direction, boolean childNavigation, String... names) {
+        for (String name : names) {
+            Action original = tree.getActionMap().get(name);
+            if (original == null) {
+                continue;
+            }
+            tree.getActionMap().put(name, new AbstractAction() {
+                @Override
+                public void actionPerformed(ActionEvent e) {
+                    keyboardNavigationDirection = direction;
+                    keyboardChildNavigation = childNavigation;
+                    try {
+                        original.actionPerformed(e);
+                    } finally {
+                        keyboardNavigationDirection = 0;
+                        keyboardChildNavigation = false;
+                    }
+                    // Swing actions can set their lead/anchor and scroll to the rejected row.
+                    TreePath selected = tree.getSelectionPath();
+                    tree.setLeadSelectionPath(selected);
+                    tree.setAnchorSelectionPath(selected);
+                    if (selected != null) {
+                        tree.scrollPathToVisible(selected);
+                    }
+                }
+            });
+        }
+    }
+
+    private TreePath getSelectablePath(TreePath path) {
+        if (isSelectable(path)) {
+            return path;
+        }
+        // Only keyboard navigation skips rows. Mouse/programmatic selection still rejects them.
+        if (path != null && keyboardNavigationDirection != 0) {
+            int row = tree.getRowForPath(path);
+            for (row += keyboardNavigationDirection; row >= 0 && row < tree.getRowCount(); row += keyboardNavigationDirection) {
+                TreePath candidate = tree.getPathForRow(row);
+                if (keyboardChildNavigation && !path.getParentPath().isDescendant(candidate)) {
+                    break;
+                }
+                if (isSelectable(candidate)) {
+                    return candidate;
+                }
+            }
+        }
+        return null;
     }
 
     private boolean isSelectable(TreePath path) {
@@ -547,6 +636,46 @@ public class MainMenuTreeWidget {
         this.onSelect = onSelect;
     }
 
+    /** Selects the first available menu page containing a field, following nested panel references. */
+    public boolean selectField(String fieldKey) {
+        IniFileModel ini = uiContext.iniFileState.getIniFileModel();
+        if (ini == null || fieldKey == null) {
+            return false;
+        }
+        // Search in menu order, not dialog declaration order: inner dialogs and unused
+        // pin summaries may be declared before the page that actually exposes the field.
+        Enumeration<?> nodes = root.preorderEnumeration();
+        while (nodes.hasMoreElements()) {
+            DefaultMutableTreeNode node = (DefaultMutableTreeNode) nodes.nextElement();
+            if (!(node.getUserObject() instanceof SubMenuModel) || !isSelectable(new TreePath(node.getPath()))) {
+                continue;
+            }
+            SubMenuModel subMenu = (SubMenuModel) node.getUserObject();
+            if (containsField(ini.getDialogs().get(subMenu.getKey()), ini, fieldKey, new HashSet<>())) {
+                selectSubMenu(subMenu.getKey());
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean containsField(DialogModel dialog, IniFileModel ini, String fieldKey, Set<String> visited) {
+        if (dialog == null || !visited.add(dialog.getKey())) {
+            return false;
+        }
+        for (DialogModel.Field field : dialog.getFields()) {
+            if (fieldKey.equals(field.getKey())) {
+                return true;
+            }
+        }
+        for (PanelModel panel : dialog.getPanels()) {
+            if (containsField(panel.resolveDialog(ini), ini, fieldKey, visited)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     public void selectSubMenu(String subMenuKey) {
         DefaultMutableTreeNode node = findSubMenuNode(root, subMenuKey);
         if (node != null) {
@@ -554,9 +683,14 @@ public class MainMenuTreeWidget {
             if (!isSelectable(path)) {
                 return;
             }
+            boolean alreadySelected = path.equals(tree.getSelectionPath());
             tree.setSelectionPath(path);
             tree.scrollPathToVisible(path);
-            handleSelection(path);
+            // A changed selection is handled by the listener. Preserve the public method's
+            // refresh behavior when callers explicitly select the already-current page.
+            if (alreadySelected) {
+                handleSelection(path);
+            }
         }
     }
 

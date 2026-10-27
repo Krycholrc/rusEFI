@@ -23,6 +23,8 @@ public class SdCardFieldsContent {
     public String conditional;
     public Boolean isPtr = false;
     public String[] names;
+    // optional LiveData.yaml 'prefix_names', see DataLogConsumer#getHumanGaugeName
+    public String[] prefixNames;
     public int structureStartingTsPosition;
 
     public static void wrapContent(LazyFile output, String content) {
@@ -37,7 +39,7 @@ public class SdCardFieldsContent {
             output.write(additionalHeaders);
         }
         output.write("static LOG_FIELD_CONSTNESS_SPECIFIER_STORAGE MLG::Entries::Field fields[] = {\n" +
-                "\t{packedTime, GAUGE_NAME_TIME, \"sec\", 3},\n");
+                "\t{MLG_SOURCE(packedTime), GAUGE_NAME_TIME, \"sec\", 3},\n");
         output.write(content);
         output.write("};\n");
     }
@@ -46,8 +48,9 @@ public class SdCardFieldsContent {
         if (state.isStackEmpty()) {
             for (int i = 0; i < expressions.length; i++) {
                 String namePrefix = getNamePrefix(i, names);
+                String humanNamePrefix = DataLogConsumer.getPrefixName(prefixNames, i);
                 String expression = expressions[i];
-                appendFields(state, structure, namePrefix, expression);
+                appendFields(state, structure, namePrefix, humanNamePrefix, expression);
             }
         }
     }
@@ -56,11 +59,11 @@ public class SdCardFieldsContent {
         return (names == null || names.length <= 1) ? "" : names[i];
     }
 
-    private void appendFields(ReaderState state, ConfigStructure structure, String namePrefix, String expression) {
+    private void appendFields(ReaderState state, ConfigStructure structure, String namePrefix, String humanNamePrefix, String expression) {
         PerFieldWithStructuresIterator.Strategy strategy = new PerFieldWithStructuresIterator.Strategy() {
             @Override
             public String process(ReaderState state, ConfigField configField, String prefix, int currentPosition, PerFieldWithStructuresIterator perFieldWithStructuresIterator) {
-                String line = processOutput(configField, prefix, currentPosition, perFieldWithStructuresIterator, namePrefix, expression);
+                String line = processOutput(configField, prefix, currentPosition, perFieldWithStructuresIterator, namePrefix, humanNamePrefix, expression);
                 java.util.Optional<String> key = java.util.Optional.ofNullable(conditional);
                 collectedFieldsMap.computeIfAbsent(key, k -> new ArrayList<>()).add(line);
                 return line;
@@ -77,17 +80,17 @@ public class SdCardFieldsContent {
         structureStartingTsPosition = iterator.loop(structureStartingTsPosition);
     }
 
-    private String processOutput(ConfigField configField, String prefix, int currentPosition, PerFieldWithStructuresIterator perFieldWithStructuresIterator, String namePrefix, String expression) {
+    private String processOutput(ConfigField configField, String prefix, int currentPosition, PerFieldWithStructuresIterator perFieldWithStructuresIterator, String namePrefix, String humanNamePrefix, String expression) {
         if (configField.isUnusedField())
             return "";
 
         String name = configField.getOriginalArrayName();
 
-        return getLine(configField, prefix, namePrefix, prefix + name, expression, isPtr, conditional, currentPosition, perFieldWithStructuresIterator, structureStartingTsPosition);
+        return getLine(configField, prefix, namePrefix, humanNamePrefix, prefix + name, expression, isPtr, conditional, currentPosition, perFieldWithStructuresIterator, structureStartingTsPosition);
     }
 
-    private static String getLine(ConfigField configField, String prefix, String outputNamePrefix, String name, String expression, Boolean isPtr, String conditional, int currentPosition, PerFieldWithStructuresIterator perFieldWithStructuresIterator, int structureStartingTsPosition) {
-        String humanName = DataLogConsumer.getHumanGaugeName(outputNamePrefix, prefix, configField, "");
+    private String getLine(ConfigField configField, String prefix, String outputNamePrefix, String humanNamePrefix, String name, String expression, Boolean isPtr, String conditional, int currentPosition, PerFieldWithStructuresIterator perFieldWithStructuresIterator, int structureStartingTsPosition) {
+        String humanName = DataLogConsumer.getHumanGaugeName(outputNamePrefix, humanNamePrefix, prefix, configField, "");
 
         String categoryStr = configField.getCategory();
 
@@ -97,10 +100,6 @@ public class SdCardFieldsContent {
             categoryStr = ", " + categoryStr;
         }
 
-        boolean isEnum = configField.getTypeName().contains("_e");
-        if (isEnum)
-            return "";
-
         if (configField.isBit()) {
             // 'structureStartingTsPosition' is about fragment list see fragments.h
             int offsetWithinCurrentStructure = currentPosition - structureStartingTsPosition;
@@ -108,7 +107,7 @@ public class SdCardFieldsContent {
                 throw new IllegalStateException(humanName + " seems broken: " + currentPosition + " vs " + structureStartingTsPosition);
             return
                 "\t{" +
-                (isPtr ? "*" : "") + expression +
+                "MLG_SOURCE(" + (isPtr ? "*" : "") + expression + ")" +
                 ", " + offsetWithinCurrentStructure +
                 ", " + perFieldWithStructuresIterator.bitState.get() + ", "
                 + humanName +
@@ -117,9 +116,20 @@ public class SdCardFieldsContent {
                 categoryStr +
                 "},\n";
         } else {
+            float scale = OutputScale.getAdditionalScale(configField);
+            float translation = OutputScale.getTranslation(configField);
+            if (scale != 1 || translation != 0) {
+                if (categoryStr.isEmpty()) {
+                    categoryStr = ", \"none\"";
+                }
+                categoryStr += ", " + scale + "f";
+                if (translation != 0) {
+                    categoryStr += ", " + translation + "f";
+                }
+            }
             return
                 "\t{" +
-                expression + (isPtr ? "->" : ".") + name +
+                "MLG_SOURCE(" + expression + (isPtr ? "->" : ".") + name + ")" +
                 ", "
                 + humanName +
                 ", " +

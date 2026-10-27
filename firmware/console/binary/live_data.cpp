@@ -140,11 +140,11 @@ const tps_accel_state_s* getLiveData(size_t) {
 
 template<>
 const nitrous_control_state_s* getLiveData(size_t) {
-#if EFI_LAUNCH_CONTROL
+#if EFI_LAUNCH_CONTROL && EFI_ENGINE_CONTROL
     return &engine->module<NitrousController>().unmock();
 #else
     return nullptr;
-#endif // EFI_LAUNCH_CONTROL
+#endif // EFI_LAUNCH_CONTROL && EFI_ENGINE_CONTROL
 }
 
 template<>
@@ -357,4 +357,28 @@ const misfire_detection_state_s* getLiveData(size_t) {
 #else
 	return nullptr;
 #endif
+}
+
+template<>
+const rolling_launch_state_s* getLiveData(size_t) {
+#if EFI_LAUNCH_CONTROL
+	return &engine->module<RollingLaunchControl>().unmock();
+#else
+	return nullptr;
+#endif
+}
+
+template<>
+const burst_knock_state_s* getLiveData(size_t) {
+	return &engine->module<BurstKnock>().unmock();
+}
+
+template<>
+const engine_state_machine_state_s* getLiveData(size_t) {
+	return &engine->module<EngineStateMachine>().unmock();
+}
+
+template<>
+const wot_enrichment_state_s* getLiveData(size_t) {
+	return &engine->module<WotEnrichment>().unmock();
 }

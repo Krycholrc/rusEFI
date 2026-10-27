@@ -30,6 +30,8 @@ public:
 	bool isDiagnosticLampOn() const;
 	// True throughout a diagnostic sequence, including its off gaps.
 	bool isBlinking() const;
+	// True if any code present
+	bool isError() const;
 
 private:
 	enum class LampState : uint8_t {
@@ -41,20 +43,31 @@ private:
 	void setLamp(bool on, bool diagnostic = false);
 	enum class Phase : uint8_t {
 		Idle,
+		// steady lamp before the first code and after the last one
+		Prelude,
 		Pulse,
 		Gap,
+		// long pause between two consecutive codes
+		CodeGap,
+		// long pause after last code
+		CodeGapLast,
 	};
 
+	void startPrelude();
 	void startCode(ObdCode code);
 	void startDigit();
 	void startPulse();
 	void startNextCode(const error_codes_set_s& codes);
 	bool isActiveCodePresent(const error_codes_set_s& codes) const;
+	bool isLastCode(const error_codes_set_s& codes) const;
 
 	std::atomic<LampState> m_lampState{LampState::Off};
 
 	Phase m_phase = Phase::Idle;
-	ObdCode m_activeCode = ObdCode::None;
+	// the code we are currently blinking out, as stored in the error codes set
+	ObdCode m_activeObdCode = ObdCode::None;
+	// the same code after the optional board translation: this is the number actually blinked
+	uint32_t m_activeCode = 0;
 	Timer m_phaseTimer;
 	int m_divisor = 1;
 	int m_digitPlace = 0;

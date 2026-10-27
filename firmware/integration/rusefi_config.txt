@@ -617,8 +617,8 @@ bit isForcedInduction,"yes","no";Does the vehicle have a turbo or supercharger?
 bit useFordRedundantTps,"yes","no";On some Ford and Toyota vehicles one of the throttle sensors is not linear on the full range, i.e. in the specific range of the positions we effectively have only one sensor.
 bit enableKline,"enabled","disabled"
 bit overrideTriggerGaps,"yes","no"
-bit enableFan1WithAc,"yes","no";Turn on this fan when AC is on.
-bit enableFan2WithAc,"yes","no";Turn on this fan when AC is on.
+bit unusedBit_enableFan1WithAc
+bit unusedBit_enableFan2WithAc
 bit enableTrailingSparks,"yes","no";Enable secondary spark outputs that fire after the primary (rotaries, twin plug engines).
 bit etb_use_two_wires,"yes","no";TLE7209 and L6205 use two-wire mode. TLE9201 and VNH2SP30 do NOT use two wire mode.
 bit isDoubleSolenoidIdle,"yes","no";Subaru/BMW style where default valve position is somewhere in the middle. First solenoid opens it more while second can close it more than default position.
@@ -958,7 +958,7 @@ spi_device_e digitalPotentiometerSpiDevice;Digital Potentiometer is used by stoc
 	! bit 13
 	bit stepperForceParkingEveryRestart,"yes","no"
 	bit isFasterEngineSpinUpEnabled,"enabled","disabled";If enabled, RPM is estimated from ~90 degrees of rotation using tooth timestamps collected even before trigger sync, and fuel/ignition scheduling starts as soon as the trigger syncs (sequential ignition temporarily runs as wasted spark until full phase sync). As soon as the trigger syncs plus 90 degrees rotation, fuel and ignition events will occur. If disabled, worst case may require up to 4 full crank rotations before any events are scheduled.
-	bit coastingFuelCutEnabled,"enabled","disabled";This setting disables fuel injection while the engine is in overrun, this is useful as a fuel saving measure and to prevent back firing.
+	bit coastingFuelCutEnabled,"enabled","disabled";Enable fuel cutoff in the selected Overrun, Decel or Both mode. Coolant, MAP, tuning and Lua guards apply to every mode.
 	bit useIacTableForCoasting,"enabled","disabled";Override the IAC position during overrun conditions to help reduce engine breaking, this can be helpful for large engines in light weight cars or engines that have trouble returning to idle.
 	bit useNoiselessTriggerDecoder,"yes","no"
 	bit useIdleTimingPidControl,"yes","no"
@@ -1243,7 +1243,7 @@ bit useFixedBaroCorrFromMap,"yes","no";Read MAP sensor on ECU start-up to use as
 bit useSeparateAdvanceForCranking,"Table","Fixed (auto taper)";In Constant mode, timing is automatically tapered to running as RPM increases.\nIn Table mode, the "Cranking ignition advance" table is used directly.
 bit useAdvanceCorrectionsForCranking,"yes","no";This enables the various ignition corrections during cranking (IAT, CLT and PID idle).\nYou probably don't need this.
 bit flexCranking,"enabled","disabled";Enable flex-fuel compensation for engine start. When on (and a flex fuel sensor is present) the cranking coolant multiplier and the priming pulse mass each come from a 2D table over coolant and ethanol % (crankingFuelFlexTable / primeFlexTable, 4-row ethanol axis) instead of their 1D coolant curves. When off, the 1D curves (crankingFuelCoef / primeValues) are used.
-bit flexFuelTransientComp,"enabled","disabled";Enable flex-fuel transient fueling compensation (acceleration enrichment and wall wetting tau/beta) based on ethanol content and coolant temperature.
+bit flexFuelTransientComp,"enabled","disabled";Shared CLT/ethanol compensation for additive TPS AE and wall-film tau/beta. AE multiplier applies only to MS/Percent Adder. tau/beta apply in every AE strategy and Basic/Advanced. Requires a registered ethanol sensor. Does not control base stoichiometry, cranking or priming.
 bit useIacPidMultTable,"yes","no";This flag allows to use a special 'PID Multiplier' table (0.0-1.0) to compensate for nonlinear nature of IAC-RPM controller
 bit isBoostControlEnabled,"enabled","disabled"
 bit launchSmoothRetard,"enabled","disabled";Gradually interpolates the ignition timing from the base timing table value down to the target "Absolute Timing at Launch" value, starting from the beginning of the launch window.
@@ -1298,7 +1298,7 @@ custom pin_mode_e 1 bits, U08, @OFFSET@, [0:6], $pin_mode_e_enum
 	float tachPulseDuractionMs;Duration in ms or duty cycle depending on selected mode;"", 1, 0, 0, 100, 2
 
 
-	float wwaeTau;Length of time the deposited wall fuel takes to dissipate after the start of acceleration. ;"Seconds", 1, 0, 0, 3, 2
+	float wwaeTau;Evaporation time constant for the Basic fuel-film model, in seconds. Higher values make the film respond more slowly. This is an exponential time constant, not the time for all deposited fuel to evaporate. Effective values below 0.01 bypass compensation.;"Seconds", 1, 0, 0, 3, 2
 	pid_s alternatorControl;
 	pid_s etb;
 	int16_t airTaperRpmRange;RPM range above upper limit for extra air taper;"RPM", 1, 0, 0, 1500, 0
@@ -1318,7 +1318,7 @@ tps_limit_t tps2Max;Fully opened voltage for primary throttle position sensor
 	uint16_t autoscale multisparkSparkDuration;How long to wait for the spark to fire before recharging the coil for another spark.;"ms", 0.001, 0, 0, 3, 2
 	uint16_t autoscale multisparkDwell;This sets the dwell time for subsequent sparks. The main spark's dwell is set by the dwell table.;"ms", 0.001, 0, 0, 3, 2
 	pid_s idleRpmPid;See cltIdleRpmBins
-	float wwaeBeta;0 = No fuel settling on port walls 1 = All the fuel settling on port walls setting this to 0 disables the wall wetting enrichment. ;"Fraction", 1, 0, 0, 1, 2
+	float wwaeBeta;Fraction of injected fuel deposited on the wall in the Basic model. 0.20 represents 20%. Larger values increase modeled deposition. Effective values below 0.01 bypass compensation. Downstream controller limits still apply.;"Fraction", 1, 0, 0, 1, 2
 
 	Gpio binarySerialTxPin;See also EFI_CONSOLE_RX_BRAIN_PIN
 	Gpio binarySerialRxPin;
@@ -1380,7 +1380,7 @@ tps_limit_t tps2Max;Fully opened voltage for primary throttle position sensor
 	uint8_t totalGearsCount;;"", 1, 0, 1, @@TCU_GEAR_COUNT@@, 0
 
 	custom InjectionTimingMode 1 bits, U08, @OFFSET@, [0:1], "End of injection", "Start of injection", "Center of injection"
-	InjectionTimingMode injectionTimingMode;Defines when fuel is injected relative to the intake valve opening. Options include End of Injection or other timing references.
+	InjectionTimingMode injectionTimingMode;Selects which point of the nominal injector pulse follows the Injection Timing table: End, Start, or Center.\nTable angles are crank degrees relative to each cylinder's compression TDC. Negative = before TDC, positive = after TDC.\nEnd/Center modes advance the start by the full/half pulse duration. See Injection Timing table help for examples.
 
 	debug_mode_e debugMode;See http://rusefi.com/s/debugmode
 	uint8_t fan1ExtraIdle;Additional idle % when fan #1 is active;"%", 1, 0, 0, 100, 0
@@ -1576,8 +1576,8 @@ float tChargeAirDecrLimit;Maximum allowed rate of decrease allowed for the estim
     custom torqueReductionActivationMode_e  1 bits, S08, @OFFSET@, [0:1], @@torqueReductionActivationMode_e_enum@@
     torqueReductionActivationMode_e torqueReductionActivationMode;
 
-	int16_t tpsAccelFractionPeriod;A delay in cycles between fuel-enrich. portions;"cycles", 1, 0, 0, 500, 0
-	float tpsAccelFractionDivisor;A fraction divisor: 1 or less = entire portion at once, or split into diminishing fractions;"coef", 1, 0, 1, 100, 2
+	int16_t tpsAccelFractionPeriod;Spread each additive enrichment portion evenly across this number of engine cycles. Higher values reduce delivery per cycle and spread it longer. Period 1 and divisor 1 disable fractional spreading. Ignored by MAP Prediction and Lua.;"cycles", 1, 0, 0, 500, 0
+	float tpsAccelFractionDivisor;Divide accumulated additive enrichment into diminishing portions. 1 delivers a full portion. Larger values reduce the initial delivery and extend the tail. With period 1 and divisor 2: 1/2, 1/4, 1/8. Ignored by MAP Prediction and Lua.;"coef", 1, 0, 1, 100, 2
 
 	spi_device_e tle8888spiDevice;
 	spi_device_e mc33816spiDevice;
@@ -1771,6 +1771,7 @@ pin_input_mode_e[LUA_DIGITAL_INPUT_COUNT iterate] luaDigitalInputPinModes;
 
 	output_pin_e speedometerOutputPin
 	uint16_t speedometerPulsePerKm;Number of speedometer pulses per kilometer travelled.;"", 1, 0, 0, 65000, 0
+	uint16_t speedometerBenchTestFrequency;Frequency used by the "Test Speedo" bench test button, pulsed for a fixed duration.;"Hz", 1, 0, 0, 2000, 0
 
 uint8_t[CAM_INPUTS_COUNT iterate] simulatorCamPosition;
 
@@ -1880,13 +1881,13 @@ uint8_t autoscale knockFuelTrim;Maximum Amount of Fuel trim when knock;"%", 1, 0
 	bit unusedBit_Fancy14
 	bit unusedBit_Fancy15
 	bit unusedBit_Fancy16
-	bit unusedBit_Fancy17
-	bit unusedBit_Fancy18
+	bit gearDetectionUseOutputShaftSpeed,"Output Shaft Speed","Main Vehicle Speed";Driveshaft reference for gear detection. Main Vehicle Speed uses wheel revolutions/km and final drive ratio. Output Shaft Speed reads shaft RPM directly and requires an OSS provider.
+	bit gearDetectionRpmSourceIsInputShaftSpeed,"Input Shaft Speed","Engine RPM";RPM source when Speed Source is Output Shaft Speed. Main Vehicle Speed retains automatic input-shaft selection when that sensor is registered.
 	bit unusedBit_Fancy19
 	bit unusedBit_Fancy20
 	bit unusedBit_Fancy21
-	bit unusedBit_Fancy22
-	bit unusedBit_Fancy23
+	bit transmissionSlipDetectionEnabled,"enabled","disabled";Compare the selected Slip RPM Source with expected RPM for the detected gear. Requires Speed Source = Output Shaft Speed, a valid gear and the minimum vehicle speed. Wheel-based references cannot identify transmission slip.
+	bit transmissionSlipRpmSourceIsInputShaftSpeed,"Input Shaft Speed","Engine RPM";Input Shaft Speed measures internal gearbox slip. Engine RPM also includes clutch or torque-converter slip. Accurate gear ratios are required.
 	bit unusedBit_Fancy24
 	bit unusedBit_Fancy25
 	bit unusedBit_Fancy26
@@ -2047,6 +2048,21 @@ end_struct
 
 ! end of engine_configuration_s
 	float idleParkNeutralOffset;Signed idle position offset when Lua reports Park or Neutral via setParkNeutral(boolean). Negative values reduce opening, positive values increase it. Added to running open-loop idle, not target RPM. Zero disables the correction.;"%", 1, 0, -100, 100, 1
+include_file controllers/modules/gear_detector/gear_detector_engineConfiguration.txt
+include_file controllers/modules/rolling_launch/rolling_launch_engineConfiguration.txt
+    float tpsExpAverageAlpha;Exponential smoothing applied independently to TPS1 and TPS2 on each resolved sensor read.\n1 passes readings through. Lower values add smoothing and feedback delay. This is not a fixed-rate filter.;"", 1, 0, 0, 1, 3
+    float tpsExpAverageResetThreshold;If TPS changes by at least this much within tpsExpAverageResetTimeMs, the ExpAverage filter resets and jumps straight to the new raw value instead of smoothing into it. Set to 0 to disable.;"%", 1, 0, 0, 100, 1
+    float tpsExpAverageResetTimeMs;Time window for tpsExpAverageResetThreshold - a change of that size within this many milliseconds triggers an immediate ExpAverage reset. Set to 0 to disable.;"ms", 1, 0, 0, 1000, 0
+include_file controllers/modules/burst_knock/burst_knock_engineConfiguration.txt
+include_file controllers/modules/engine_state_machine/engine_state_machine_engineConfiguration.txt
+include_file controllers/modules/wot_enrichment/wot_enrichment_engineConfiguration.txt
+include_file controllers/actuators/vvt_advanced_engineConfiguration.txt
+! [tag:state_aware_dfco] Match dfco_fuel_cut_mode_e; zero defaults retain overrun without a gear requirement.
+#define dfco_fuel_cut_mode_e_enum "Overrun", "Decel", "Both", "INVALID"
+custom dfco_fuel_cut_mode_e 1 bits, U08, @OFFSET@, [0:1], @@dfco_fuel_cut_mode_e_enum@@
+dfco_fuel_cut_mode_e dfcoFuelCutMode;Overrun uses the TPS, RPM and vehicle-speed thresholds below. Decel requires Enable Engine State Machine and its Decelerating state, or RPM falling faster than the Decel RPM rate threshold when no vehicle-speed sensor is configured. Decel does not use the overrun TPS/RPM/speed/gear gates. Both accepts either path. Coolant, MAP, tuning and Lua guards apply in all modes. Active state-machine shifts suppress fuel cut.
+bit coastingFuelCutRequiresGear,"enabled","disabled";Require a valid DetectedGear greater than zero for the Overrun path. Neutral, unknown or invalid gear prevents overrun fuel cut. Configure gear detection before enabling. Does not restrict the Decel path.
+include_file controllers/modules/fuel_pump/fuel_pump_engineConfiguration.txt
 end_struct
 
 ! note that this magic field name is used by LiveDataParserPanel
@@ -2180,7 +2196,7 @@ uint8_t[IAT_IGN_CORR_LOAD_COUNT] autoscale ignitionIatCorrLoadBins;;{bitStringVa
 
 #define INJ_PHASE_LOAD_COUNT 16
 #define INJ_PHASE_RPM_COUNT 16
-int16_t[INJ_PHASE_LOAD_COUNT x INJ_PHASE_RPM_COUNT] injectionPhase;;"deg", 1, 0, -720, 720, 0
+int16_t[INJ_PHASE_LOAD_COUNT x INJ_PHASE_RPM_COUNT] injectionPhase;Crank degrees relative to each cylinder's compression TDC: 0 = TDC, negative = before, positive = after.\nInjection timing control mode selects End, Start, or Center of the nominal pulse.\nOn a four-stroke engine angles wrap every 720 degrees: -400 = +320, -250 = +470, +400 = -320. Valve timing depends on the camshaft and VVT.;"deg", 1, 0, -720, 720, 0
 uint16_t[INJ_PHASE_LOAD_COUNT] injPhaseLoadBins;;{bitStringValue(pressureUnitsLabels, useMetricOnInterface)}, {useMetricOnInterface ? 1 : @@UNITS_KPA_TO_PSI@@}, 0, 0, {useMetricOnInterface ? @@MAP_UPPER_LIMIT@@ : @@MAP_UPPER_LIMIT@@ * @@UNITS_KPA_TO_PSI@@}, 0
 uint16_t[INJ_PHASE_RPM_COUNT] injPhaseRpmBins;;"RPM",	   1, 0, 0, 18000, 0
 
@@ -2220,7 +2236,7 @@ uint8_t[FUEL_LOAD_COUNT x FUEL_RPM_COUNT] autoscale lambdaTable;;{useLambdaOnInt
 uint16_t[FUEL_LOAD_COUNT] lambdaLoadBins;;{bitStringValue(afrLoadUnitLabels, afrLoadUnitIdx)}, {!(afrOverrideMode == 1 || (afrOverrideMode == 0 && fuelAlgorithm == 0)) || useMetricOnInterface ? 1 : @@UNITS_KPA_TO_PSI@@}, 0, 0, {afrOverrideMode == 1 || (afrOverrideMode == 0 && fuelAlgorithm == 0) ? (useMetricOnInterface ? @@MAP_UPPER_LIMIT@@ : @@MAP_UPPER_LIMIT@@ * @@UNITS_KPA_TO_PSI@@) : @@MAP_UPPER_LIMIT@@}, 0
 uint16_t[FUEL_RPM_COUNT] lambdaRpmBins;;"RPM",	  1, 0, 0, 18000, 0
 
-float[TPS_TPS_ACCEL_TABLE x TPS_TPS_ACCEL_TABLE] tpsTpsAccelTable;MS Adder uses milliseconds. Percent Adder uses a fraction: 0.20 adds 20% with sequential injection and other corrections neutral. Injection-mode scaling also applies. MAP Prediction does not use this table. Changing modes reinterprets the same values.;@@TPS_ACCEL_UNITS@@, 1, 0, 0, 30000, 2
+float[TPS_TPS_ACCEL_TABLE x TPS_TPS_ACCEL_TABLE] tpsTpsAccelTable;X: previous TPS. Y: new TPS. MS Adder values are milliseconds. Percent Adder values are fractions: 0.20 adds 20% in sequential injection with neutral corrections. Injection-mode scaling also applies. MAP Prediction and Lua ignore this table. Changing modes reinterprets existing values.;@@TPS_ACCEL_UNITS@@, 1, 0, 0, 30000, 2
 float[TPS_TPS_ACCEL_TABLE] tpsTpsAccelFromRpmBins;;"%",	  1, 0, 0, 30000, 2
 float[TPS_TPS_ACCEL_TABLE] tpsTpsAccelToRpmBins;;"%",	  1, 0, 0, 25500, 2
 
@@ -2429,10 +2445,10 @@ uint16_t[ENGINE_NOISE_CURVE_SIZE] knockNoiseRpmBins;;"RPM", 1, 0, 0, 30000, 0
 int8_t[ENGINE_NOISE_CURVE_SIZE] autoscale knockBaseNoise;Knock sensor output knock detection threshold depending on current RPM.;"dB", 0.5, 0, -64, 10, 1
 
 uint8_t[TPS_TPS_ACCEL_CLT_CORR_TABLE] autoscale tpsTspCorrValuesBins;;"RPM", 50, 0, 0, 12500, 0
-uint8_t[TPS_TPS_ACCEL_CLT_CORR_TABLE] autoscale tpsTspCorrValues;;"multiplier", 0.02, 0, 0, 5, 2
+uint8_t[TPS_TPS_ACCEL_CLT_CORR_TABLE] autoscale tpsTspCorrValues;Multiplier applied to additive TPS enrichment at each RPM. 1.00 is neutral, 0.50 halves and 2.00 doubles. Ignored by MAP Prediction and Lua.;"multiplier", 0.02, 0, 0, 5, 2
 
 uint8_t[TPS_TPS_ACCEL_CLT_CORR_TABLE] autoscale predictiveMapBlendDurationBins;;"RPM", 50, 0, 0, 12500, 0
-uint8_t[TPS_TPS_ACCEL_CLT_CORR_TABLE] autoscale predictiveMapBlendDurationValues;;"second", 0.02, 0, 0, 5, 2
+uint8_t[TPS_TPS_ACCEL_CLT_CORR_TABLE] autoscale predictiveMapBlendDurationValues;Transition duration and total event time limit from estimated MAP toward current measured MAP, interpolated at current RPM. Rising estimated MAP restarts blending without extending the event time limit. Prediction may exit earlier. The largest duration in this curve also sizes TPS history. Used only by MAP Prediction.;"second", 0.02, 0, 0, 5, 2
 
 ! Flex-fuel transient fueling compensation: CLT (X) x Ethanol% (Y) multiplier tables
 #define FLEX_TRANSIENT_CLT_SIZE 8
@@ -2440,9 +2456,9 @@ uint8_t[TPS_TPS_ACCEL_CLT_CORR_TABLE] autoscale predictiveMapBlendDurationValues
 
 int16_t[FLEX_TRANSIENT_CLT_SIZE] flexTransientCltBins;Coolant temperature axis for the flex-fuel transient compensation tables;"C", 1, 0, -40, 200, 0
 uint8_t[FLEX_TRANSIENT_ETH_SIZE] flexTransientEthanolBins;Ethanol percentage axis for the flex-fuel transient compensation tables;"%", 1, 0, 0, 100, 0
-uint8_t[FLEX_TRANSIENT_ETH_SIZE x FLEX_TRANSIENT_CLT_SIZE] autoscale flexAeMult;Acceleration enrichment multiplier as a function of CLT (X) and ethanol % (Y);"mult", 0.02, 0, 0, 5, 2
-uint8_t[FLEX_TRANSIENT_ETH_SIZE x FLEX_TRANSIENT_CLT_SIZE] autoscale flexWwTauMult;Wall wetting tau multiplier as a function of CLT (X) and ethanol % (Y);"mult", 0.02, 0, 0, 5, 2
-uint8_t[FLEX_TRANSIENT_ETH_SIZE x FLEX_TRANSIENT_CLT_SIZE] autoscale flexWwBetaMult;Wall wetting beta multiplier as a function of CLT (X) and ethanol % (Y);"mult", 0.02, 0, 0, 5, 2
+uint8_t[FLEX_TRANSIENT_ETH_SIZE x FLEX_TRANSIENT_CLT_SIZE] autoscale flexAeMult;Additive TPS AE multiplier over CLT (X) and ethanol (Y), enabled by Flex fuel transient compensation. 1.00 is neutral. Ignored by MAP Prediction and Lua. CLT/ethanol bins are shared with both wall-film flex tables.;"mult", 0.02, 0, 0, 5, 2
+uint8_t[FLEX_TRANSIENT_ETH_SIZE x FLEX_TRANSIENT_CLT_SIZE] autoscale flexWwTauMult;Multiplier of wall-film evaporation time constant over CLT (X) and ethanol (Y). Above 1 makes evaporation slower. Applies with every AE strategy and Basic/Advanced. CLT/ethanol bins are shared with the other flex transient tables.;"mult", 0.02, 0, 0, 5, 2
+uint8_t[FLEX_TRANSIENT_ETH_SIZE x FLEX_TRANSIENT_CLT_SIZE] autoscale flexWwBetaMult;Multiplier of wall-film deposition fraction over CLT (X) and ethanol (Y). Above 1 increases modeled deposition. Applies with every AE strategy and Basic/Advanced. CLT/ethanol bins are shared with the other flex transient tables.;"mult", 0.02, 0, 0, 5, 2
 
 ! yes, 200C region is legit for some air-cooled engines
 int16_t[CLT_LIMITER_CURVE_SIZE] autoscale cltRevLimitRpmBins;;{bitStringValue(unitsLabels, useMetricOnInterface)}, {useMetricOnInterface ? 1 : 1.8}, {useMetricOnInterface ? 0 : 17.77777}, {useMetricOnInterface ? -40 : -40}, {useMetricOnInterface ? 200 : 392}, 0
@@ -2582,6 +2598,7 @@ split_lines@@BOARD_CONFIG_FROM_FILE@@
 	end_struct
 
 	KnockGain[MAX_CYLINDER_COUNT iterate] knockGains
+include_file controllers/modules/fuel_pump/fuel_pump_tables.txt
 end_struct
 
 #define PPS_OK_INDICATOR "Pedal OK"
@@ -2639,6 +2656,10 @@ end_struct
 #define ts_show_can_wbo true
 #define ts_show_vvt_output_pin true
 #define ts_show_vvl_control true
+#define ts_show_rolling_launch true
+#define ts_show_burst_knock true
+#define ts_show_engine_state_machine true
+#define ts_show_wot_enrichment true
 #define ts_show_hbridge_function true
 #define ts_show_aux_sensors true
 #define ts_show_clutch_up true

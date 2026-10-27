@@ -11,8 +11,6 @@
 #include "trigger_structure.h"
 #include "wall_fuel.h"
 
-#define MAX_WIRES_COUNT 2
-
 class InjectionEvent {
 public:
 	InjectionEvent() = default;
@@ -22,11 +20,17 @@ public:
 	// Call this every decoded trigger tooth.  It will schedule any relevant events for this injector.
 	void onTriggerTooth(efitick_t nowNt, float currentPhase, float nextPhase);
 
-	WallFuel& getWallFuel();
+	// [tag:wall_fuel_telemetry] SD log field addresses must be constant expressions in production.
+	constexpr WallFuel& getWallFuel() {
+		return wallFuel;
+	}
 
 	void setIndex(uint8_t index) {
 		ownIndex = index;
 	}
+
+	CylinderMask calculateInjectorOutputMask() const;
+	uint8_t getIndex() const { return ownIndex; }
 
 private:
 	// Update the injection start angle
@@ -40,19 +44,43 @@ private:
 	 * It's more efficient to handle all injectors together if that's the case
 	 */
 	bool isSimultaneous = false;
-	uint8_t ownIndex = 0;
+	uint8_t ownIndex = 0xF;
 	uint8_t cylinderNumber = 0;
+	injection_mode_e m_injectionMode = IM_SEQUENTIAL;
 
 	WallFuel wallFuel{};
 
 public:
-	// TODO: this should be private
-	InjectorOutputPin *outputs[MAX_WIRES_COUNT]{};
-	InjectorOutputPin *outputsStage2[MAX_WIRES_COUNT]{};
 	float injectionStartAngle = 0;
 };
 
-void turnInjectionPinHigh(scheduler_arg_t arg);
+// [tag:injection_action_snapshot] Every action carries the output selection made
+// when the pulse was scheduled. A mode change can rebuild InjectionEvent before
+// either close action runs.
+struct InjectorContext {
+	scheduler_arg_t raw = 0;
+
+	static constexpr CylinderMask OutputMask = (1u << MAX_CYLINDER_COUNT) - 1;
+	static constexpr scheduler_arg_t EventIndexShift = MAX_CYLINDER_COUNT;
+	static constexpr scheduler_arg_t Stage2Flag = 1u << (MAX_CYLINDER_COUNT + 4);
+
+	constexpr InjectorContext(CylinderMask mask, uint8_t eventIndex, bool stage2Active)
+		: raw((mask & OutputMask) | ((eventIndex & 0xF) << EventIndexShift) | (stage2Active ? Stage2Flag : 0)) {}
+
+	constexpr explicit InjectorContext(scheduler_arg_t value) : raw(value) {}
+
+	constexpr CylinderMask outputsMask() const { return raw & OutputMask; }
+	constexpr uint8_t eventIndex() const { return (raw >> EventIndexShift) & 0xF; }
+	constexpr bool stage2Active() const { return raw & Stage2Flag; }
+};
+
+static_assert(MAX_CYLINDER_COUNT <= sizeof(CylinderMask) * 8,
+	"CylinderMask must have one bit per cylinder");
+static_assert(MAX_CYLINDER_COUNT <= 12);
+
+void startInjection(scheduler_arg_t arg);
+void endInjection(scheduler_arg_t arg);
+void endInjectionStage2(scheduler_arg_t arg);
 
 
 /**
@@ -73,8 +101,6 @@ public:
 	 * Calculate injector opening angle, pins, and mode for all injectors
 	 */
 	void addFuelEvents();
-
-	static void resetOverlapping();
 
 	/**
 	 * injection events, per cylinder

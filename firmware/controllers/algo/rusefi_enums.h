@@ -952,6 +952,37 @@ typedef enum __attribute__((__packed__)) {
 	ftRegionCruise = 3,
 } ft_region_e;
 
+enum class fan_ac_mode_e : uint8_t {
+	Disabled = 0,
+	Relay = 1,
+	Pressure = 2,
+};
+
+// Engine state machine shift settings; values match the tuning schema.
+enum class sm_clutch_switch_e : uint8_t {
+	None = 0,
+	ClutchUp = 1,
+	ClutchDown = 2,
+};
+
+enum class sm_shift_detection_mode_e : uint8_t {
+	RpmRate = 0,
+	VssRate = 1,
+};
+
+// [tag:state_aware_dfco] Zero preserves traditional overrun behavior in older tunes.
+enum class dfco_fuel_cut_mode_e : uint8_t {
+	Overrun = 0,
+	Decel = 1,
+	Both = 2,
+};
+
+enum class fuel_pump_mode_e : uint8_t {
+	Single = 0,
+	Dual = 1,
+	Pwm = 2,
+};
+
 enum class SDLoggerMode : uint8_t {
 	None = 0,
 	Mlg = 1,

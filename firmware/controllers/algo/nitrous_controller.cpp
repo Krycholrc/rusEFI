@@ -4,8 +4,18 @@
 
 #include "pch.h"
 
-#if EFI_LAUNCH_CONTROL
+#if EFI_LAUNCH_CONTROL && EFI_ENGINE_CONTROL
 #include "nitrous_controller.h"
+#include "limp_manager.h"
+
+void NitrousController::onFastCallback() {
+    // LimpManager runs earlier in the fast callback. Remove nitrous as soon as
+    // injection is cut, without waiting for the next slow arming update.
+    if (!engineConfiguration->nitrousControlEnabled || !getLimpManager()->allowInjection()) {
+        isNitrousCondition = false;
+        enginePins.nitrousRelay.setValue(false);
+    }
+}
 
 void NitrousController::onSlowCallback() {
     if (engineConfiguration->nitrousControlEnabled) {
@@ -19,6 +29,7 @@ void NitrousController::onSlowCallback() {
         isNitrousCondition = (
             isNitrousArmed && isNitrousSpeedCondition && isNitrousTpsCondition && isNitrousCltCondition
                 && isNitrousMapCondition && isNitrousAfrCondition && isNitrousRpmCondition
+                && getLimpManager()->allowInjection()
         );
     } else {
         isNitrousCondition = false;
@@ -193,4 +204,4 @@ SensorType NitrousController::getLuaGauge() const {
     return result;
 }
 
-#endif // EFI_LAUNCH_CONTROL
+#endif // EFI_LAUNCH_CONTROL && EFI_ENGINE_CONTROL

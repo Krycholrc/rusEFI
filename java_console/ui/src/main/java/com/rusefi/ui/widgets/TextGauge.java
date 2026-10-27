@@ -11,6 +11,7 @@ import com.rusefi.core.SensorCentral;
 import com.rusefi.core.SensorSubscription;
 import com.rusefi.io.ConnectionStatusLogic;
 import com.rusefi.ui.UIContext;
+import com.rusefi.ui.widgets.tune.TuningStyle;
 
 import javax.swing.*;
 import java.awt.*;
@@ -32,7 +33,7 @@ public class TextGauge {
     private static final Logging log = getLogging(TextGauge.class);
     private static final String NO_CONNECTION = "---";
 
-    private final JPanel content = new JPanel(new BorderLayout(2, 0));
+    private final JPanel content = new JPanel(new BorderLayout(0, 0));
     private final JLabel titleLabel = new JLabel();
     private final JLabel valueLabel = new JLabel();
     private final JLabel unitsLabel = new JLabel();
@@ -43,29 +44,34 @@ public class TextGauge {
     private boolean active;
 
     public TextGauge(UIContext uiContext, String channelName, Consumer<String> onChannelChange) {
-        content.setBorder(BorderFactory.createCompoundBorder(
-            BorderFactory.createLineBorder(Color.GRAY, 1),
-            BorderFactory.createEmptyBorder(2, 4, 2, 4)
-        ));
-        content.setBackground(Color.WHITE);
+        TuningStyle.styleLiveValue(content, 3, 8);
 
         Font baseFont = UIManager.getFont("Label.font");
         if (baseFont != null) {
-            titleLabel.setFont(baseFont.deriveFont(Font.BOLD, baseFont.getSize() - 1f));
-            valueLabel.setFont(baseFont.deriveFont(Font.BOLD, baseFont.getSize() + 2f));
-            unitsLabel.setFont(baseFont.deriveFont(baseFont.getSize() - 1f));
+            titleLabel.setFont(baseFont.deriveFont(Font.PLAIN, baseFont.getSize() - 1f));
+            valueLabel.setFont(baseFont.deriveFont(Font.BOLD, baseFont.getSize() + 9f));
+            unitsLabel.setFont(baseFont.deriveFont(Font.PLAIN, baseFont.getSize() - 1f));
         }
+        titleLabel.setForeground(TuningStyle.muted());
+        unitsLabel.setForeground(TuningStyle.muted());
 
-        titleLabel.setHorizontalAlignment(SwingConstants.CENTER);
+        // Title and units share the top row (units in the right corner), the value fills the rest.
+        // A long title is cut with an ellipsis before the units.
+        titleLabel.setHorizontalAlignment(SwingConstants.LEFT);
         valueLabel.setHorizontalAlignment(SwingConstants.CENTER);
-        unitsLabel.setHorizontalAlignment(SwingConstants.CENTER);
+        unitsLabel.setHorizontalAlignment(SwingConstants.RIGHT);
+        unitsLabel.setBorder(BorderFactory.createEmptyBorder(0, 6, 0, 0));
 
-        content.add(titleLabel, BorderLayout.NORTH);
+        JPanel header = new JPanel(new BorderLayout());
+        header.setOpaque(false);
+        header.add(titleLabel, BorderLayout.CENTER);
+        header.add(unitsLabel, BorderLayout.EAST);
+
+        content.add(header, BorderLayout.NORTH);
         content.add(valueLabel, BorderLayout.CENTER);
-        content.add(unitsLabel, BorderLayout.SOUTH);
 
         valueLabel.setText(NO_CONNECTION);
-        valueLabel.setForeground(Color.RED);
+        valueLabel.setForeground(TuningStyle.muted());
 
         content.addMouseListener(new MouseAdapter() {
             @Override
@@ -82,7 +88,7 @@ public class TextGauge {
             if (!isConnected) {
                 SwingUtilities.invokeLater(() -> {
                     valueLabel.setText(NO_CONNECTION);
-                    valueLabel.setForeground(Color.RED);
+                    valueLabel.setForeground(TuningStyle.muted());
                 });
             }
         };
@@ -157,7 +163,7 @@ public class TextGauge {
             SwingUtilities.invokeLater(() -> {
                 if (ConnectionStatusLogic.INSTANCE.isConnected()) {
                     valueLabel.setText(formatValue(value, gaugeModel));
-                    valueLabel.setForeground(Color.BLACK);
+                    valueLabel.setForeground(TuningStyle.text());
                 }
             })
         );
@@ -166,7 +172,7 @@ public class TextGauge {
         Double currentValue = SensorCentral.getInstance().getValue(channel);
         if (currentValue != null && ConnectionStatusLogic.INSTANCE.isConnected()) {
             valueLabel.setText(formatValue(currentValue, gaugeModel));
-            valueLabel.setForeground(Color.BLACK);
+            valueLabel.setForeground(TuningStyle.text());
         }
     }
 
@@ -186,7 +192,7 @@ public class TextGauge {
                 JMenu categoryMenu = new JMenu(category);
                 pm.add(categoryMenu);
                 for (GaugeModel gauge : ini.getGaugeCategories().get(category).getGauges()) {
-                    JMenuItem mi = new JMenuItem(gauge.getTitle());
+                    JMenuItem mi = new JMenuItem(GaugeMenuLabel.getTitle(uiContext, gauge));
                     mi.addActionListener(ev -> {
                         setChannel(uiContext, gauge.getName());
                         onChannelChange.accept(gauge.getName());
@@ -196,6 +202,7 @@ public class TextGauge {
             }
         }
         if (pm.getSubElements().length > 0) {
+            GaugeMenuSearch.addTo(pm);
             pm.show(e.getComponent(), e.getX(), e.getY());
         }
     }

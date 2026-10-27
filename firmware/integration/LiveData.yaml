@@ -12,6 +12,10 @@
 #
 # technical debt: see docs_enums.mk where all the .txt files should be mentioned as well :(
 #
+# [tag:live_data_sd_mapping] SD expressions address the generated state subobject:
+# bit offsets do not include a module's polymorphic EngineModule base. Use
+# engineModule for module-backed state; SD and Lua then read the active module.
+# SD sources are constant addresses in firmware and lazy accessors on hosts.
 Usages:
 #  output_channels always goes first at least because it has protocol version at well-known offset
   - name: output_channels
@@ -39,16 +43,14 @@ Usages:
     folder: controllers/engine_cycle
     prepend: integration/rusefi_config_shared.txt
     output_name: knock
-    constexpr: "engine->module<KnockController>()"
-    isPtr: true
+    engineModule: KnockController
 
   - name: prime_injection
     cppFileName: prime_injection
     java: PrimeController.java
     folder: controllers/engine_cycle
     prepend: integration/rusefi_config_shared.txt
-    constexpr: "engine->module<PrimeController>()"
-    isPtr: true
+    engineModule: PrimeController
 
   - name: tcu_controller
     java: TcuController.java
@@ -57,11 +59,15 @@ Usages:
     conditional_compilation: "EFI_TCU"
 
   - name: throttle_model
+    engineModule: ThrottleModel
+    conditional_compilation: "EFI_ENGINE_CONTROL"
     java: ThrottleModel.java
     folder: controllers/math
     output_name: throttle_model
 
   - name: high_pressure_fuel_pump
+    engineModule: HpfpController
+    conditional_compilation: "EFI_HPFP && EFI_ENGINE_CONTROL"
     java: HighPressureFuelPump.java
     folder: controllers/engine_cycle
     output_name: hpfp
@@ -72,7 +78,7 @@ Usages:
     prepend: integration/rusefi_config_shared.txt
     constexpr: "engine->module<InjectorModelPrimary>()"
     isPtr: true
-    # working around unmock() in simulator
+    # IInjectorModel does not expose injector_model_s on hosts.
     conditional_compilation: "EFI_PROD_CODE && EFI_IDLE_CONTROL"
 
   - name: launch_control_state
@@ -90,20 +96,20 @@ Usages:
     conditional_compilation: "EFI_LAUNCH_CONTROL"
 
   - name: antilag_system_state
+    constexpr: "static_cast<antilag_system_state_s&>(engine->antilagController)"
     cppFileName: antilag_system
     java: AntilagSystem.java
     folder: controllers/algo
     prepend: integration/rusefi_config_shared.txt
     output_name: als
-    conditional_compilation: "FULL_SD_LOGS"
+    conditional_compilation: "EFI_ANTILAG_SYSTEM && FULL_SD_LOGS"
 
   - name: boost_control
     java: BoostControl.java
     folder: controllers/actuators
     prepend: integration/rusefi_config_shared.txt
     output_name: boost
-    constexpr: "engine->module<BoostController>()"
-    isPtr: true
+    engineModule: BoostController
     conditional_compilation: "EFI_ENGINE_CONTROL && EFI_BOOST_CONTROL"
 
   - name: ac_control
@@ -126,6 +132,7 @@ Usages:
     java: FanControl.java
     folder: controllers/modules/fan_control
     output_name: [ "fan1", "fan2" ]
+    prefix_names: [ "Fan1", "Fan2" ]
     constexpr: ["engine->module<FanControl1>()", "engine->module<FanControl2>()"]
     isPtr: true
 
@@ -137,6 +144,7 @@ Usages:
     engineModule: FuelPumpController
 
   - name: main_relay
+    engineModule: MainRelayController
     java: MainRelay.java
     folder: controllers/actuators
     output_name: mainRelay
@@ -154,6 +162,7 @@ Usages:
     constexpr: "engine->engineState"
 
   - name: tps_accel_state
+    engineModule: TpsAccelEnrichment
     cppFileName: accel_enrichment
     java: TpsAccelState.java
     folder: controllers/algo
@@ -173,6 +182,7 @@ Usages:
     prepend: integration/rusefi_config_shared.txt
     conditional_compilation: "EFI_SHAFT_POSITION_INPUT && FULL_SD_LOGS"
     output_name: [ "trg", "vvt1i", "vvt1e", "vvt2i", "vvt2e" ]
+    prefix_names: [ "Trg", "VVT1I", "VVT1E", "VVT2I", "VVT2E" ]
     constexpr: [ "engine->triggerCentral.triggerState", "engine->triggerCentral.vvtState[0][0]","engine->triggerCentral.vvtState[0][1]","engine->triggerCentral.vvtState[1][0]","engine->triggerCentral.vvtState[1][1]"]
 
   - name: trigger_state_primary
@@ -187,8 +197,14 @@ Usages:
     cppFileName: wall_fuel
     java: WallFuelState.java
     folder: controllers/algo
+    prepend: integration/rusefi_config_shared.txt
+    # [tag:wall_fuel_telemetry] SD logging and Lua read the same mg fields as TunerStudio.
+    constexpr: "engine->injectionEvents.elements[0].getWallFuel()"
+    conditional_compilation: "EFI_ENGINE_CONTROL"
 
   - name: closed_loop_idle
+    constexpr: "static_cast<closed_loop_idle_s&>(engine->m_ltit)"
+    conditional_compilation: "EFI_IDLE_CONTROL"
     cppFileName: closed_loop_idle
     java: closed_loop_idle.java
     folder: controllers/math
@@ -211,16 +227,16 @@ Usages:
     java: IdleState.java
     folder: controllers/actuators
     prepend: integration/rusefi_config_shared.txt
-    constexpr: "engine->module<IdleController>().unmock()"
+    engineModule: IdleController
     output_name: idle
-# working around unmock() in simulator
-    conditional_compilation: "EFI_PROD_CODE && EFI_IDLE_CONTROL"
+    conditional_compilation: "EFI_IDLE_CONTROL"
 
   - name: electronic_throttle
     java: ElectronicThrottle.java
     folder: controllers/actuators
     prepend: integration/rusefi_config_shared.txt
     output_name: [ "etb1", "etb2" ]
+    prefix_names: [ "ETB1", "ETB2" ]
     additional_headers: [ "electronic_throttle_impl.h" ]
     constexpr: ["getLiveDataConstexpr<electronic_throttle_s, 0>()", "getLiveDataConstexpr<electronic_throttle_s, 1>()"]
     isPtr: true
@@ -231,6 +247,7 @@ Usages:
     java: WidebandController.java
     folder: controllers/sensors/
     output_name: [ "wb1", "wb2" ]
+    prefix_names: [ "WBO1", "WBO2" ]
 
   - name: dc_motors
     java: DcMotors.java
@@ -239,6 +256,8 @@ Usages:
     constexpr: "engine->dc_motors"
 
   - name: sent_state
+    constexpr: "static_cast<sent_state_s&>(engine->sent_state)"
+    conditional_compilation: "EFI_SENT_SUPPORT"
     cppFileName: sent
     java: SentState.java
     folder: controllers/sensors
@@ -247,8 +266,7 @@ Usages:
   - name: vvt
     java: VvtState.java
     folder: controllers/actuators
-    constexpr: "engine->module<VvtController1>()"
-    isPtr: true
+    engineModule: VvtController1
     conditional_compilation: "EFI_VVT_PID"
 
   - name: lambda_monitor
@@ -280,8 +298,13 @@ Usages:
     java: LongTermFuelTrim.java
     folder: controllers
     prepend: integration/rusefi_config_shared.txt
+    # [tag:ltft_sd_state] Bit offsets are relative to the generated state, not the EngineModule base.
+    engineModule: LongTermFuelTrim
+    conditional_compilation: "EFI_LTFT_CONTROL"
 
   - name: short_term_fuel_trim_state
+    engineModule: ShortTermFuelTrim
+    conditional_compilation: "EFI_ENGINE_CONTROL"
     cppFileName: short_term_fuel_trim
     java: ShortTermFuelTrim.java
     folder: controllers/math
@@ -296,6 +319,7 @@ Usages:
     conditional_compilation: "MODULE_VVL_CONTROLLER"
 
   - name: live_data_rotational_idle
+    constexpr: "static_cast<live_data_rotational_idle_s&>(engine->rotationalIdleController)"
     java: RotationalIdle.java
     folder: controllers/engine_cycle
     prepend: integration/rusefi_config_shared.txt
@@ -307,3 +331,32 @@ Usages:
     folder: controllers/modules/injector_deadtime_autotune
     engineModule: InjectorDeadtimeAutotune
     conditional_compilation: "EFI_ENGINE_CONTROL"
+
+  - name: rolling_launch_state
+    java: RollingLaunch.java
+    folder: controllers/modules/rolling_launch
+    prepend: integration/rusefi_config_shared.txt
+    output_name: rolling_launch
+    engineModule: RollingLaunchControl
+    conditional_compilation: "EFI_LAUNCH_CONTROL"
+
+  - name: burst_knock_state
+    java: BurstKnock.java
+    folder: controllers/modules/burst_knock
+    prepend: integration/rusefi_config_shared.txt
+    output_name: burst_knock
+    engineModule: BurstKnock
+
+  - name: engine_state_machine_state
+    java: EngineStateMachine.java
+    folder: controllers/modules/engine_state_machine
+    prepend: integration/rusefi_config_shared.txt
+    output_name: engine_state_machine
+    engineModule: EngineStateMachine
+
+  - name: wot_enrichment_state
+    java: WotEnrichment.java
+    folder: controllers/modules/wot_enrichment
+    prepend: integration/rusefi_config_shared.txt
+    output_name: wot_enrichment
+    engineModule: WotEnrichment

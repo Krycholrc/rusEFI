@@ -3,6 +3,103 @@
 #include "fuel_math.h"
 #include "limp_manager.h"
 
+TEST(limp, zeroLambdaDelayDoesNotCutWhenProtectionDisabled) {
+	EngineTestHelper eth(engine_type_e::TEST_ENGINE);
+	engineConfiguration->lambdaProtectionEnable = false;
+	engineConfiguration->lambdaProtectionTimeout = 0;
+	engineConfiguration->lambdaProtectionRestoreRpm = 2000;
+	Sensor::setMockValue(SensorType::Lambda1, 0.85f);
+
+	engine->lambdaMonitor.update(3000, 80);
+	ASSERT_TRUE(engine->lambdaMonitor.lambdaCurrentlyGood);
+	EXPECT_FALSE(engine->lambdaMonitor.isCut());
+
+	LimpManager dut;
+	dut.updateState(3000, getTimeNowNt());
+	EXPECT_TRUE(dut.allowInjection());
+}
+
+TEST(limp, disablingLambdaProtectionReleasesActiveCut) {
+	EngineTestHelper eth(engine_type_e::TEST_ENGINE);
+	engineConfiguration->lambdaProtectionEnable = false;
+	engineConfiguration->lambdaProtectionTimeout = 0;
+	engineConfiguration->lambdaProtectionRestoreRpm = 2000;
+	engine->lambdaMonitor.lambdaMonitorCut = true;
+
+	engine->lambdaMonitor.update(3000, 80);
+	EXPECT_FALSE(engine->lambdaMonitor.isCut());
+}
+
+TEST(limp, zeroLowOilDelayDoesNotCutWithHealthyPressure) {
+	EngineTestHelper eth(engine_type_e::TEST_ENGINE);
+	engineConfiguration->minOilPressureAfterStart = 0;
+	engineConfiguration->enableOilPressureProtect = true;
+	engineConfiguration->minimumOilPressureTimeout = 0;
+	setArrayValues(config->minimumOilPressureValues, 100);
+	setArrayValues(config->maximumOilPressureValues, 0);
+	Sensor::setMockValue(SensorType::OilPressure, 200);
+	engine->rpmCalculator.setRpmValue(1000);
+
+	LimpManager dut;
+	dut.updateState(1000, getTimeNowNt());
+	EXPECT_TRUE(dut.allowInjection());
+
+	// A positive delay avoids the false cut with exactly the same inputs.
+	engineConfiguration->minimumOilPressureTimeout = 0.1f;
+	dut.updateState(1000, getTimeNowNt());
+	EXPECT_TRUE(dut.allowInjection());
+
+	// Zero delay still cuts immediately when pressure is genuinely low.
+	engineConfiguration->minimumOilPressureTimeout = 0;
+	Sensor::setMockValue(SensorType::OilPressure, 50);
+	dut.updateState(1000, getTimeNowNt());
+	EXPECT_EQ(ClearReason::OilPressure, dut.allowInjection().reason);
+}
+
+TEST(limp, zeroHighOilDelayDoesNotCutWithHealthyPressure) {
+	EngineTestHelper eth(engine_type_e::TEST_ENGINE);
+	engineConfiguration->minOilPressureAfterStart = 0;
+	engineConfiguration->enableOilPressureProtect = false;
+	engineConfiguration->maxOilPressureTimeout = 0;
+	setArrayValues(config->maximumOilPressureValues, 500);
+	Sensor::setMockValue(SensorType::OilPressure, 200);
+	engine->rpmCalculator.setRpmValue(1000);
+
+	LimpManager dut;
+	dut.updateState(1000, getTimeNowNt());
+	EXPECT_TRUE(dut.allowInjection());
+
+	engineConfiguration->maxOilPressureTimeout = 0.1f;
+	dut.updateState(1000, getTimeNowNt());
+	EXPECT_TRUE(dut.allowInjection());
+
+	engineConfiguration->maxOilPressureTimeout = 0;
+	Sensor::setMockValue(SensorType::OilPressure, 600);
+	dut.updateState(1000, getTimeNowNt());
+	EXPECT_EQ(ClearReason::OilPressure, dut.allowInjection().reason);
+}
+
+TEST(limp, zeroInjectorDutyDelayDoesNotCutBelowBothLimits) {
+	EngineTestHelper eth(engine_type_e::TEST_ENGINE);
+	engineConfiguration->injectionMode = IM_SEQUENTIAL;
+	engineConfiguration->maxInjectorDutyInstant = 95;
+	engineConfiguration->maxInjectorDutySustained = 85;
+	engineConfiguration->maxInjectorDutySustainedTimeout = 0;
+	engine->engineState.injectionDuration = 12;
+
+	// At 3000 RPM the 720-degree cycle is 40 ms, so duty is 30%.
+	ASSERT_NEAR(30, getInjectorDutyCycle(3000), 0.01f);
+	LimpManager dut;
+	dut.updateState(3000, getTimeNowNt());
+	EXPECT_TRUE(dut.allowInjection());
+
+	// 36 ms in a 40 ms cycle exceeds the sustained limit but not the instant limit.
+	engine->engineState.injectionDuration = 36;
+	ASSERT_NEAR(90, getInjectorDutyCycle(3000), 0.01f);
+	dut.updateState(3000, getTimeNowNt());
+	EXPECT_EQ(ClearReason::InjectorDutyCycle, dut.allowInjection().reason);
+}
+
 TEST(limp, testFatalError) {
   EngineTestHelper eth(engine_type_e::TEST_ENGINE);
 	LimpManager dut;
@@ -210,6 +307,26 @@ TEST(limp, boostCut) {
 	EXPECT_TRUE(dut.allowInjection());
 }
 
+TEST(limp, BoostFuelCutRemainsActiveWhenMapSensorFails) {
+	EngineTestHelper eth(engine_type_e::TEST_ENGINE);
+	engineConfiguration->boostCutPressure = 180;
+	engineConfiguration->boostCutPressureHyst = 20;
+	Sensor::setMockValue(SensorType::Map, 200);
+	engine->rpmCalculator.setRpmValue(2000);
+	auto* limp = getLimpManager();
+	limp->updateState(2000, getTimeNowNt());
+	ASSERT_EQ(ClearReason::BoostCut, limp->allowInjection().reason);
+
+	Sensor::setInvalidMockValue(SensorType::Map);
+	ASSERT_FALSE(Sensor::get(SensorType::Map));
+	limp->updateState(2000, getTimeNowNt());
+	EXPECT_EQ(ClearReason::BoostCut, limp->allowInjection().reason);
+
+	Sensor::setMockValue(SensorType::Map, 150);
+	limp->updateState(2000, getTimeNowNt());
+	EXPECT_TRUE(limp->allowInjection());
+}
+
 TEST(limp, boostCutUint8Overflow) {
 	EngineTestHelper eth(engine_type_e::TEST_ENGINE);
 
@@ -383,6 +500,57 @@ TEST(limp, oilPressureRunning) {
 	ASSERT_TRUE(dut.allowInjection());
 }
 
+// https://github.com/rusefi/rusefi/issues/9879
+// Cold start: oil pressure is above "Minimum oil pressure after start" but still
+// below the running table. The running check waits for the 5 second
+// after-start window to end, then applies its own timeout.
+TEST(limp, oilPressureRunningCheckDuringAfterStartWindow) {
+	EngineTestHelper eth(engine_type_e::TEST_ENGINE);
+	engineConfiguration->minOilPressureAfterStart = 50;
+	engineConfiguration->enableOilPressureProtect = true;
+	engineConfiguration->minimumOilPressureTimeout = 1.0f;
+	setArrayValues(config->minimumOilPressureValues, 75);
+
+	LimpManager dut;
+
+	Sensor::setMockValue(SensorType::OilPressure, 60);
+
+	// Engine stopped
+	engine->rpmCalculator.setRpmValue(0);
+	dut.updateState(0, getTimeNowNt());
+	EXPECT_TRUE(dut.allowInjection());
+
+	// Start the engine
+	engine->rpmCalculator.setRpmValue(1000);
+	dut.updateState(1000, getTimeNowNt());
+	EXPECT_TRUE(dut.allowInjection());
+
+	advanceTimeUs(0.9e6);
+	dut.updateState(1000, getTimeNowNt());
+	EXPECT_TRUE(dut.allowInjection());
+
+	// 2 seconds after start, still inside the after-start window
+	advanceTimeUs(1.1e6);
+	dut.updateState(1000, getTimeNowNt());
+	EXPECT_TRUE(dut.allowInjection());
+
+	// 4.9 seconds after start: last update inside the window
+	advanceTimeUs(2.9e6);
+	dut.updateState(1000, getTimeNowNt());
+	EXPECT_TRUE(dut.allowInjection());
+
+	// 5.8 seconds after start: window is over, running timeout not reached yet
+	advanceTimeUs(0.9e6);
+	dut.updateState(1000, getTimeNowNt());
+	EXPECT_TRUE(dut.allowInjection());
+
+	// 6.1 seconds after start: still below running table, fuel is cut
+	advanceTimeUs(0.3e6);
+	dut.updateState(1000, getTimeNowNt());
+	EXPECT_FALSE(dut.allowInjection());
+	EXPECT_EQ(ClearReason::OilPressure, dut.allowInjection().reason);
+}
+
 TEST(limp, oilPressureMaxLimit) {
 	EngineTestHelper eth(engine_type_e::TEST_ENGINE);
 
@@ -430,6 +598,58 @@ TEST(limp, oilPressureMaxLimit) {
 	Sensor::setMockValue(SensorType::OilPressure, 110);
 	dut.updateState(rpm, getTimeNowNt());
 	ASSERT_TRUE(dut.allowInjection());
+}
+
+TEST(limp, highOilPressureTimeoutAlreadyExpiredAtEngineStart) {
+	EngineTestHelper eth(engine_type_e::TEST_ENGINE);
+	engineConfiguration->minOilPressureAfterStart = 0;
+	engineConfiguration->enableOilPressureProtect = false;
+	engineConfiguration->maxOilPressureTimeout = 1;
+	setArrayValues(config->maximumOilPressureValues, 500);
+	LimpManager dut;
+	Sensor::setMockValue(SensorType::OilPressure, 0);
+	engine->rpmCalculator.setRpmValue(0);
+	dut.updateState(0, getTimeNowNt());
+	advanceTimeUs(10000000);
+	dut.updateState(0, getTimeNowNt());
+
+	// The first running sample is high, but no running timeout has elapsed yet.
+	Sensor::setMockValue(SensorType::OilPressure, 600);
+	engine->rpmCalculator.setRpmValue(1000);
+	dut.updateState(1000, getTimeNowNt());
+	EXPECT_TRUE(dut.allowInjection());
+
+	// Once a healthy running sample resets the timer, its configured delay works.
+	Sensor::setMockValue(SensorType::OilPressure, 400);
+	dut.updateState(1000, getTimeNowNt());
+	ASSERT_TRUE(dut.allowInjection());
+	Sensor::setMockValue(SensorType::OilPressure, 600);
+	advanceTimeUs(900000);
+	dut.updateState(1000, getTimeNowNt());
+	EXPECT_TRUE(dut.allowInjection());
+	advanceTimeUs(200000);
+	dut.updateState(1000, getTimeNowNt());
+	EXPECT_EQ(ClearReason::OilPressure, dut.allowInjection().reason);
+}
+
+TEST(limp, highOilPressureTimeoutStartsAtFirstRunningSample) {
+	EngineTestHelper eth(engine_type_e::TEST_ENGINE);
+	engineConfiguration->minOilPressureAfterStart = 0;
+	engineConfiguration->enableOilPressureProtect = false;
+	engineConfiguration->maxOilPressureTimeout = 1;
+	setArrayValues(config->maximumOilPressureValues, 500);
+	Sensor::setMockValue(SensorType::OilPressure, 600);
+	engine->rpmCalculator.setRpmValue(1000);
+	LimpManager dut;
+
+	dut.updateState(1000, getTimeNowNt());
+	EXPECT_TRUE(dut.allowInjection());
+	advanceTimeUs(900000);
+	dut.updateState(1000, getTimeNowNt());
+	EXPECT_TRUE(dut.allowInjection());
+	advanceTimeUs(200000);
+	dut.updateState(1000, getTimeNowNt());
+	EXPECT_EQ(ClearReason::OilPressure, dut.allowInjection().reason);
 }
 
 

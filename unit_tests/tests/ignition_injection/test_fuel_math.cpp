@@ -238,6 +238,100 @@ TEST(AirmassModes, SpeedDensityCompensatedMap) {
 	EXPECT_NEAR(result.EngineLoadPercent, 80.0f, EPS4D);
 }
 
+// Exercise both paths reported in https://github.com/rusefi/rusefi/issues/10401.
+// Compensated MAP selects table cells; baroCorrTable independently multiplies
+// running fuel. Their coexistence must not apply MAP/baro to physical air mass.
+class BarometricCompensation : public testing::Test {
+protected:
+	EngineTestHelper eth{engine_type_e::TEST_ENGINE};
+
+	void SetUp() override {
+		engineConfiguration->fuelAlgorithm = engine_load_mode_e::LM_SPEED_DENSITY;
+		engineConfiguration->displacement = 2.0f;
+		engineConfiguration->cylindersCount = 4;
+		engineConfiguration->injectionMode = IM_SEQUENTIAL;
+		engineConfiguration->stoichRatioPrimary = 14.7f;
+		engineConfiguration->veOverrideMode = VE_None;
+		engineConfiguration->afrOverrideMode = AFR_None;
+		engineConfiguration->coastingFuelCutEnabled = false;
+		setTable(config->veTable, 80);
+		setTable(config->lambdaTable, 1.0f);
+		setArrayValues(config->cltFuelCorr, 1.0f);
+		setArrayValues(config->iatFuelCorr, 1.0f);
+		setTable(config->postCrankingFactor, 1.0f);
+		Sensor::setMockValue(SensorType::Clt, 20);
+		Sensor::setMockValue(SensorType::Iat, 20);
+		Sensor::setMockValue(SensorType::Tps1, 0);
+		engine->rpmCalculator.setRpmValue(2000);
+	}
+
+	void checkFuel(float map, float baro, float load, float ve, float correction) {
+		Sensor::setMockValue(SensorType::Map, map);
+		Sensor::setMockValue(SensorType::BarometricPressure, baro);
+		engine->periodicFastCallback();
+
+		const float expectedAir = SpeedDensityBase::getAirmassImpl(ve / 100, map, 293.15f);
+		const float actualFuel = engine->engineState.injectionMass[0];
+		ASSERT_TRUE(std::isfinite(actualFuel));
+		ASSERT_GT(actualFuel, 0);
+		EXPECT_NEAR(load, engine->engineState.veTableYAxis, EPS3D);
+		EXPECT_NEAR(load, engine->engineState.fuelingLoad, EPS3D);
+		EXPECT_NEAR(load, engine->fuelComputer.afrTableYAxis, EPS3D);
+		EXPECT_NEAR(ve, engine->engineState.currentVe, EPS3D);
+		EXPECT_NEAR(expectedAir, engine->fuelComputer.sdAirMassInOneCylinder, EPS4D);
+		EXPECT_NEAR(correction, engine->engineState.baroCorrection, EPS4D);
+		EXPECT_NEAR(correction, engine->fuelComputer.totalFuelCorrection, EPS4D);
+		EXPECT_NEAR(expectedAir / 14.7f * correction, actualFuel, 1e-6f);
+	}
+};
+
+TEST_F(BarometricCompensation, DefaultTableDoesNotDuplicateAltitudeCorrection) {
+	// Keep the default neutral baro table and a flat VE table to isolate pressure.
+	engineConfiguration->useCompensatedMap = false;
+	checkFuel(100, STD_ATMOSPHERE, 100, 80, 1);
+	const float seaLevelFuel = engine->engineState.injectionMass[0];
+
+	checkFuel(80, 0.8f * STD_ATMOSPHERE, 80, 80, 1);
+	EXPECT_NEAR(0.8f * seaLevelFuel, engine->engineState.injectionMass[0], 1e-6f);
+
+	// At altitude the load returns to 100, but actual MAP still reduces fuel
+	// to 80% of the sea-level value. There is no second altitude multiplier.
+	engineConfiguration->useCompensatedMap = true;
+	checkFuel(80, 0.8f * STD_ATMOSPHERE, 100, 80, 1);
+	EXPECT_NEAR(0.8f * seaLevelFuel, engine->engineState.injectionMass[0], 1e-6f);
+}
+
+TEST_F(BarometricCompensation, LoadAxisAndFuelMultiplierRemainIndependent) {
+	// Deliberately vary VE with load: 80% at load 80, 100% at load 100.
+	setLinearCurve(config->veLoadBins, 20, 140);
+	for (size_t row = 0; row < efi::size(config->veTable); row++) {
+		setArrayValues(config->veTable[row], config->veLoadBins[row]);
+	}
+
+	engineConfiguration->useCompensatedMap = false;
+	checkFuel(80, 0.8f * STD_ATMOSPHERE, 80, 80, 1);
+	const float baselineFuel = engine->engineState.injectionMass[0];
+
+	engineConfiguration->useCompensatedMap = true;
+	checkFuel(80, 0.8f * STD_ATMOSPHERE, 100, 100, 1);
+	EXPECT_NEAR(1.25f * baselineFuel, engine->engineState.injectionMass[0], 1e-6f);
+
+	// A separately calibrated baro table: 1.0 at sea level, 1.1 at 80% baro.
+	for (size_t row = 0; row < efi::size(config->baroCorrTable); row++) {
+		const float correction = 1.0f + (STD_ATMOSPHERE - config->baroCorrPressureBins[row]) / (2 * STD_ATMOSPHERE);
+		setArrayValues(config->baroCorrTable[row], correction);
+	}
+
+	// Both effects can be configured to add fuel, but each applies exactly once:
+	// 25% from the chosen VE cells and 10% from the explicit baro multiplier.
+	checkFuel(80, 0.8f * STD_ATMOSPHERE, 100, 100, 1.1f);
+	EXPECT_NEAR(1.25f * 1.1f * baselineFuel, engine->engineState.injectionMass[0], 1e-6f);
+
+	engineConfiguration->useCompensatedMap = false;
+	checkFuel(80, 0.8f * STD_ATMOSPHERE, 80, 80, 1.1f);
+	EXPECT_NEAR(1.1f * baselineFuel, engine->engineState.injectionMass[0], 1e-6f);
+}
+
 TEST(AirmassModes, FallbackMap) {
 	StrictMock<MockVp3d> veTable;
 	StrictMock<MockVp3d> mapFallback;
@@ -450,11 +544,14 @@ TEST(FuelMath, VeSwitchTableBlend) {
 
 	// TPS = 50 -> 50% blend -> midpoint between 50% and 80% = 65%
 	Sensor::setMockValue(SensorType::Tps1, 50);
-	EXPECT_NEAR(dut.getVe(1000, 50, false), 0.65f, EPS4D);
+	EXPECT_NEAR(dut.getVe(1000, 50, true), 0.65f, EPS4D);
+	EXPECT_FLOAT_EQ(65.0f, engine->engineState.currentVe);
 
 	// TPS = 100 -> 100% blend -> fully switched (80%)
 	Sensor::setMockValue(SensorType::Tps1, 100);
 	EXPECT_NEAR(dut.getVe(1000, 50, false), 0.8f, EPS4D);
+	// Calculations with postState=false must not replace the published value.
+	EXPECT_FLOAT_EQ(65.0f, engine->engineState.currentVe);
 
 	// Pin takes priority over blend when active
 	secondTablesGetState()->secondVeTableInput = Gpio::A0;
@@ -702,4 +799,113 @@ TEST(AirmassModes, PredictiveMapBlendTowardRisingSensor) {
 	// Sensor catches up to predicted — prediction exits early
 	Sensor::setMockValue(SensorType::Map, 90.0f);
 	EXPECT_FLOAT_EQ(dut.getMap(1500, false), 90.0f);
+}
+
+// [tag:predictive_map_lifetime] Blend restarts must not extend the event's lifetime.
+TEST(AirmassModes, PredictiveMapRetriggersRespectSessionDuration) {
+	EngineTestHelper eth(engine_type_e::TEST_ENGINE);
+	engineConfiguration->accelEnrichmentMode = AE_MODE_PREDICTIVE_MAP;
+	engineConfiguration->tpsAccelEnrichmentThreshold = 5;
+	for (auto& duration : config->predictiveMapBlendDurationValues) {
+		duration = 0.5f;
+	}
+
+	StrictMock<MockVp3d> veTable;
+	StrictMock<MockVp3d> mapFallback;
+	EXPECT_CALL(mapFallback, getValue(1500, 30)).WillRepeatedly(Return(85));
+	EXPECT_CALL(mapFallback, getValue(1500, 40)).WillRepeatedly(Return(95));
+	EXPECT_CALL(mapFallback, getValue(1500, 50)).WillRepeatedly(Return(105));
+	SpeedDensityAirmass dut(veTable, mapFallback);
+	Sensor::setMockValue(SensorType::Map, 65);
+	Sensor::setMockValue(SensorType::Tps1, 30);
+	auto& ae = *engine->module<TpsAccelEnrichment>();
+	ae.isAboveAccelThreshold = true;
+	ae.m_accelEventJustOccurred = true;
+	ASSERT_FLOAT_EQ(dut.getMap(1500, true), 85);
+	ASSERT_TRUE(engine->outputChannels.isMapPredictionActive);
+
+	eth.moveTimeForwardMs(200);
+	Sensor::setMockValue(SensorType::Tps1, 40);
+	ae.m_accelEventJustOccurred = true;
+	EXPECT_FLOAT_EQ(dut.getMap(1500, true), 95);
+	eth.moveTimeForwardMs(200);
+	Sensor::setMockValue(SensorType::Tps1, 50);
+	ae.m_accelEventJustOccurred = true;
+	EXPECT_FLOAT_EQ(dut.getMap(1500, true), 105);
+
+	eth.moveTimeForwardMs(99);
+	EXPECT_NEAR(dut.getMap(1500, true), 97.08f, EPS4D);
+	ASSERT_TRUE(engine->outputChannels.isMapPredictionActive);
+	eth.moveTimeForwardMs(1);
+	// The session ends at 500 ms, despite the last blend restart at 400 ms.
+	EXPECT_FLOAT_EQ(dut.getMap(1500, true), 65);
+	EXPECT_FALSE(engine->outputChannels.isMapPredictionActive);
+	EXPECT_EQ(engine->outputChannels.mapPredEventOver, 1);
+	EXPECT_EQ(engine->outputChannels.predTimerResetCnt, 1);
+
+	// Pending acceleration cannot immediately restart a capped event.
+	ae.m_accelEventJustOccurred = true;
+	eth.moveTimeForwardMs(100);
+	EXPECT_FLOAT_EQ(dut.getMap(1500, true), 65);
+	EXPECT_EQ(engine->outputChannels.mapPredEventOver, 1);
+	EXPECT_EQ(engine->outputChannels.predTimerResetCnt, 1);
+
+	// Clearing the detector threshold permits a new event with its own timer.
+	ae.m_accelEventJustOccurred = false;
+	ae.isAboveAccelThreshold = false;
+	EXPECT_FLOAT_EQ(dut.getMap(1500, true), 65);
+	ae.isAboveAccelThreshold = true;
+	ae.m_accelEventJustOccurred = true;
+	EXPECT_FLOAT_EQ(dut.getMap(1500, true), 105);
+	eth.moveTimeForwardMs(250);
+	EXPECT_FLOAT_EQ(dut.getMap(1500, true), 85);
+	EXPECT_TRUE(engine->outputChannels.isMapPredictionActive);
+	EXPECT_EQ(engine->outputChannels.predTimerResetCnt, 2);
+}
+
+TEST(AirmassModes, PredictiveMapSmallerEventHasItsOwnTpsPeak) {
+	EngineTestHelper eth(engine_type_e::TEST_ENGINE);
+	engineConfiguration->accelEnrichmentMode = AE_MODE_PREDICTIVE_MAP;
+	engineConfiguration->tpsAccelEnrichmentThreshold = 5;
+	for (auto& duration : config->predictiveMapBlendDurationValues) {
+		duration = 0.5f;
+	}
+
+	StrictMock<MockVp3d> veTable;
+	StrictMock<MockVp3d> mapFallback;
+	EXPECT_CALL(mapFallback, getValue(1500, 80)).WillRepeatedly(Return(100));
+	EXPECT_CALL(mapFallback, getValue(1500, 0)).WillRepeatedly(Return(40));
+	EXPECT_CALL(mapFallback, getValue(1500, 30)).WillRepeatedly(Return(70));
+	EXPECT_CALL(mapFallback, getValue(1500, 20)).WillRepeatedly(Return(60));
+	SpeedDensityAirmass dut(veTable, mapFallback);
+	Sensor::setMockValue(SensorType::Map, 40);
+	Sensor::setMockValue(SensorType::Tps1, 80);
+	auto& ae = *engine->module<TpsAccelEnrichment>();
+	ae.isAboveAccelThreshold = true;
+	ae.m_accelEventJustOccurred = true;
+	ASSERT_FLOAT_EQ(dut.getMap(1500, true), 100);
+	ASSERT_FLOAT_EQ(dut.getMap(1500, true), 100); // Record the first event's peak.
+
+	eth.moveTimeForwardMs(100);
+	Sensor::setMockValue(SensorType::Tps1, 0);
+	ae.isAboveAccelThreshold = false;
+	ASSERT_FLOAT_EQ(dut.getMap(1500, true), 40);
+	ASSERT_FALSE(engine->outputChannels.isMapPredictionActive);
+
+	eth.moveTimeForwardMs(500);
+	Sensor::setMockValue(SensorType::Tps1, 30);
+	ae.isAboveAccelThreshold = true;
+	ae.m_accelEventJustOccurred = true;
+	ASSERT_FLOAT_EQ(dut.getMap(1500, true), 70);
+	ASSERT_TRUE(engine->outputChannels.isMapPredictionActive);
+	// The new event retains its 30% peak instead of inheriting the old 80% peak.
+	EXPECT_FLOAT_EQ(dut.getMap(1500, true), 70);
+	EXPECT_TRUE(engine->outputChannels.isMapPredictionActive);
+	eth.moveTimeForwardMs(250);
+	EXPECT_FLOAT_EQ(dut.getMap(1500, true), 55);
+
+	// A real throttle release still cancels prediction before MAP catches up.
+	Sensor::setMockValue(SensorType::Tps1, 20);
+	EXPECT_FLOAT_EQ(dut.getMap(1500, true), 40);
+	EXPECT_FALSE(engine->outputChannels.isMapPredictionActive);
 }

@@ -10,8 +10,10 @@ import com.rusefi.sensor_logs.SensorLogger;
 import com.rusefi.ui.wizard.WizardStepDescriptor;
 import org.jetbrains.annotations.NotNull;
 
+import javax.swing.JComponent;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Supplier;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.function.Consumer;
@@ -55,6 +57,8 @@ public class UIContext {
     }
 
     public SensorLogger sensorLogger = new SensorLogger(this::getBinaryProtocol);
+    /** Makes a Start Data Logging / Stop Logging button for a tab's status strip; set by MainFrame. */
+    public Supplier<JComponent> recordButtonFactory = () -> null;
 
     public IniFileState iniFileState = new IniFileState(this);
     public GaugesPanel.DetachedRepository DetachedRepositoryINSTANCE = new GaugesPanel.DetachedRepository(this);
@@ -112,13 +116,31 @@ public class UIContext {
     // ---- Config-image change notifications ----
 
     private final List<Consumer<ConfigurationImage>> configImageListeners = new ArrayList<>();
+    private ConfigurationImage currentConfigurationImage;
+    private IniFileModel configurationImageIni;
 
     public void addConfigImageListener(Consumer<ConfigurationImage> listener) {
         configImageListeners.add(listener);
     }
 
+    /** Call on the Swing EDT when the listener's owning view is closed. */
+    public void removeConfigImageListener(Consumer<ConfigurationImage> listener) {
+        configImageListeners.remove(listener);
+    }
+
     /** Call on the Swing EDT whenever the working configuration image changes. */
     public void fireConfigImageChanged(ConfigurationImage ci) {
+        currentConfigurationImage = ci;
+        configurationImageIni = iniFileState.getIniFileModel();
         for (Consumer<ConfigurationImage> l : configImageListeners) l.accept(ci);
+    }
+
+    /** On the EDT: use the working tune, including offline edits, before the ECU image. */
+    public ConfigurationImage getCurrentConfigurationImage() {
+        if (currentConfigurationImage != null && configurationImageIni == iniFileState.getIniFileModel()) {
+            return currentConfigurationImage;
+        }
+        BinaryProtocol protocol = getBinaryProtocol();
+        return protocol == null ? null : protocol.getControllerConfiguration();
     }
 }

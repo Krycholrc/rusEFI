@@ -22,7 +22,28 @@ SensorType ShortTermFuelTrim::getSensorForBankIndex(size_t index) {
 	}
 }
 
+ft_region_e ShortTermFuelTrim::regionForSmState(EngineStateMachineState state) {
+	switch (state) {
+		case EngineStateMachineState::Idle:
+		case EngineStateMachineState::Afterstart:
+		case EngineStateMachineState::Coasting:
+			return ftRegionIdle;
+		case EngineStateMachineState::Overrun:
+			return ftRegionOverrun;
+		case EngineStateMachineState::WOT:
+			return ftRegionPower;
+		default:
+			// All remaining primary states use the cruise cell. Existing learning gates
+			// still decide whether that cell can update.
+			return ftRegionCruise;
+	}
+}
+
 ft_region_e ShortTermFuelTrim::computeStftBin(float rpm, float load, stft_s& cfg) {
+	if (engineConfiguration->useEngineStateMachine && engineConfiguration->stateBasedStft) {
+		return regionForSmState(engine->module<EngineStateMachine>().unmock().getCurrentState());
+	}
+
 	// Low RPM -> idle
 	if (idleDeadband.lt(rpm, cfg.maxIdleRegionRpm))
 	{

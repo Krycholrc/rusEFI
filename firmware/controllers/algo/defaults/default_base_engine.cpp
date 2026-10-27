@@ -130,7 +130,7 @@ void setDynoDefaults() {
 bool applyDefaultsOrFixAfterBurn(const engine_configuration_s* previousConfiguration) {
   bool changed = false;
 
-#ifndef KNOCK_SPECTROGRAM
+#if !KNOCK_SPECTROGRAM
   // Tunes can carry this optional display setting from a spectrogram-capable build.
   if (engineConfiguration->enableKnockSpectrogram) {
     engineConfiguration->enableKnockSpectrogram = false;
@@ -150,6 +150,11 @@ bool applyDefaultsOrFixAfterBurn(const engine_configuration_s* previousConfigura
 
   if (engineConfiguration->mainRelayDisableTime == 0) {
     engineConfiguration->mainRelayDisableTime = 1;
+    changed = true;
+  }
+
+  if (engineConfiguration->transmissionSlipMinVss == 0) {
+    engineConfiguration->transmissionSlipMinVss = 5;
     changed = true;
   }
 
@@ -220,6 +225,18 @@ bool applyDefaultsOrFixAfterBurn(const engine_configuration_s* previousConfigura
 	  engineConfiguration->ppsExpAverageAlpha = 1;
 	  changed = true;
 	}
+	if (!std::isfinite(engineConfiguration->tpsExpAverageAlpha) || engineConfiguration->tpsExpAverageAlpha <= 0 || engineConfiguration->tpsExpAverageAlpha > 1) {
+	  engineConfiguration->tpsExpAverageAlpha = 1;
+	  changed = true;
+	}
+	if (!std::isfinite(engineConfiguration->tpsExpAverageResetThreshold) || engineConfiguration->tpsExpAverageResetThreshold < 0) {
+	  engineConfiguration->tpsExpAverageResetThreshold = 10;
+	  changed = true;
+	}
+	if (!std::isfinite(engineConfiguration->tpsExpAverageResetTimeMs) || engineConfiguration->tpsExpAverageResetTimeMs < 0) {
+	  engineConfiguration->tpsExpAverageResetTimeMs = 50;
+	  changed = true;
+	}
 	if (engineConfiguration->afrExpAverageAlpha <= 0 || engineConfiguration->afrExpAverageAlpha > 1) {
 	  engineConfiguration->afrExpAverageAlpha = 1;
 	  changed = true;
@@ -261,8 +278,31 @@ bool applyDefaultsOrFixAfterBurn(const engine_configuration_s* previousConfigura
         changed = true;
     }
 
-	if (engineConfiguration->vvtControlMinRpm < engineConfiguration->cranking.rpm) {
-		engineConfiguration->vvtControlMinRpm = engineConfiguration->cranking.rpm;
+	// Seed fields absent in older tunes without overwriting a deliberately one-sided limit.
+	if (engineConfiguration->vvtIntake_iTermMin == 0 && engineConfiguration->vvtIntake_iTermMax == 0) {
+		engineConfiguration->vvtIntake_iTermMin = -1000;
+		engineConfiguration->vvtIntake_iTermMax = 1000;
+		changed = true;
+	}
+	if (engineConfiguration->vvtExhaust_iTermMin == 0 && engineConfiguration->vvtExhaust_iTermMax == 0) {
+		engineConfiguration->vvtExhaust_iTermMin = -1000;
+		engineConfiguration->vvtExhaust_iTermMax = 1000;
+		changed = true;
+	}
+	if (engineConfiguration->vvtAdvDistanceBinsIntake[VVT_ADV_DISTANCE_SIZE - 1] == 0) {
+		setLinearCurve(engineConfiguration->vvtAdvDistanceBinsIntake, -40, 40, 1);
+		changed = true;
+	}
+	if (engineConfiguration->vvtAdvDistanceBinsExhaust[VVT_ADV_DISTANCE_SIZE - 1] == 0) {
+		setLinearCurve(engineConfiguration->vvtAdvDistanceBinsExhaust, -40, 40, 1);
+		changed = true;
+	}
+	if (engineConfiguration->vvtAdvOilPressureBinsIntake[VVT_ADV_OILP_SIZE - 1] == 0) {
+		setLinearCurve(engineConfiguration->vvtAdvOilPressureBinsIntake, 0, 1000, 1);
+		changed = true;
+	}
+	if (engineConfiguration->vvtAdvOilPressureBinsExhaust[VVT_ADV_OILP_SIZE - 1] == 0) {
+		setLinearCurve(engineConfiguration->vvtAdvOilPressureBinsExhaust, 0, 1000, 1);
 		changed = true;
 	}
 
@@ -316,6 +356,9 @@ void setDefaultBaseEngine() {
 
 	engineConfiguration->compressionRatio = 9;
 	engineConfiguration->vssFilterReciprocal = VSS_FILTER_MIN;
+	engineConfiguration->ossFilterReciprocal = 3;
+	engineConfiguration->outputShaftSpeedSensorTeeth = 1;
+	engineConfiguration->transmissionSlipMinVss = 5;
 	engineConfiguration->acLowRpmLimit = 500;
 
 	engineConfiguration->mafFilterParameter = 1;
@@ -370,6 +413,7 @@ void setDefaultBaseEngine() {
 	engineConfiguration->debugMode = DBG_EXECUTOR;
 
   engineConfiguration->speedometerPulsePerKm = 2485; // GM GMT800 platform
+  engineConfiguration->speedometerBenchTestFrequency = 100; // Hz, used by the "Test Speedo" bench test button
 
 	engineConfiguration->primingDelay = 0.5;
 	// this should not be below default rpm! maybe even make them equal?
@@ -510,6 +554,7 @@ void setDefaultBaseEngine() {
 	engineConfiguration->iacByTpsTaper = 2;
 
     engineConfiguration->etbSplit = MAX_TPS_PPS_DISCREPANCY;
+	engineConfiguration->tpsExpAverageAlpha = 1;
 
 	// Advanced Trigger
 
