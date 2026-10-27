@@ -3,6 +3,7 @@ include $(PROJECT_DIR)/hw_layer/ports/stm32/2mb_flash.mk   # this board has 2Mb 
 BOARDCPPSRC =  $(BOARD_DIR)/board_configuration.cpp
 DDEFS += -DFIRMWARE_ID=\"KRC_ECU_E36\"
 IS_STM32F429 = yes
+EFI_HAS_EXT_SDRAM = no
 
 DDEFS += -DLED_CRITICAL_ERROR_BRAIN_PIN=Gpio::E8
 
