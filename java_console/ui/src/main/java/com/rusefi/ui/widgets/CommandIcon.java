@@ -170,6 +170,56 @@ public enum CommandIcon implements Icon {
             }
         }
     },
+    /** Start something, e.g. a capture: a play triangle. */
+    PLAY(new Color(0x1D4ED8)) {
+        @Override
+        void paint(Graphics2D g) {
+            Path2D play = new Path2D.Double();
+            play.moveTo(4.5, 2.5);
+            play.lineTo(13, 8);
+            play.lineTo(4.5, 13.5);
+            play.closePath();
+            g.fill(play);
+        }
+    },
+    /** Connect a device: a plug. */
+    PLUG(new Color(0x586273)) {
+        @Override
+        void paint(Graphics2D g) {
+            g.draw(new Line(6, 1.5, 6, 4.5));
+            g.draw(new Line(10, 1.5, 10, 4.5));
+            Path2D body = new Path2D.Double();
+            body.moveTo(3.5, 4.5);
+            body.lineTo(12.5, 4.5);
+            body.lineTo(12.5, 8);
+            body.curveTo(12.5, 10.5, 10.5, 12, 8, 12);
+            body.curveTo(5.5, 12, 3.5, 10.5, 3.5, 8);
+            body.closePath();
+            g.draw(body);
+            g.draw(new Line(8, 12, 8, 14.5));
+        }
+    },
+    /**
+     * Firmware update: a solid green up arrow, the flat form of the console's earlier 48 px upload arrow
+     * (upload48.png), so the update action keeps its familiar mark.
+     */
+    UPLOAD(new Color(0x16A34A)) {
+        @Override
+        void paint(Graphics2D g) {
+            Path2D arrow = new Path2D.Double();
+            arrow.moveTo(8, 1.5);
+            arrow.lineTo(14.5, 8);
+            arrow.lineTo(10.75, 8);
+            arrow.lineTo(10.75, 14.5);
+            arrow.lineTo(5.25, 14.5);
+            arrow.lineTo(5.25, 8);
+            arrow.lineTo(1.5, 8);
+            arrow.closePath();
+            g.fill(arrow);
+            // the round-joined outline softens the corners
+            g.draw(arrow);
+        }
+    },
     /** Any other command: a console prompt. */
     COMMAND(new Color(0x586273)) {
         @Override

@@ -1,7 +1,5 @@
 package com.rusefi;
 
-import com.rusefi.core.OsUtil;
-
 import com.rusefi.core.preferences.storage.PersistentConfiguration;
 import com.rusefi.maintenance.DfuFlasher;
 import com.rusefi.maintenance.ProgramSelector;
@@ -11,6 +9,9 @@ import com.rusefi.ui.basic.MigrateSettingsCheckboxState;
 import com.rusefi.ui.basic.SingleAsyncJobExecutor;
 import com.rusefi.ui.basic.StatusPanelWithProgressBar;
 import com.rusefi.ui.basic.UpdateFirmwareResult;
+import com.rusefi.ui.widgets.CommandIcon;
+import com.rusefi.ui.widgets.JoinedButtons;
+import com.rusefi.ui.widgets.ToolbarStrip;
 
 import javax.swing.*;
 import java.awt.*;
@@ -30,6 +31,61 @@ import java.util.function.Consumer;
  * this tab only offers firmware updates and locks the live tabs while the board isn't a usable ECU.
  */
 public class DevicePane {
+    static final String ACTIVITY = "Activity";
+    static final String COPY_LOG = "Copy log";
+
+    /**
+     * Lays out two children at their preferred sizes, vertically centred: the first in the middle of the
+     * whole width, the second at the right edge. When the window is too narrow for both, the first moves
+     * left so it never covers the second.
+     */
+    static final class CenteredLayout implements LayoutManager {
+        @Override
+        public void layoutContainer(Container parent) {
+            Insets insets = parent.getInsets();
+            int height = parent.getHeight() - insets.top - insets.bottom;
+            int right = parent.getWidth() - insets.right;
+            if (parent.getComponentCount() > 1) {
+                Component trailing = parent.getComponent(1);
+                Dimension size = trailing.getPreferredSize();
+                right -= size.width;
+                trailing.setBounds(right, insets.top + (height - size.height) / 2, size.width, size.height);
+                right -= JoinedButtons.ROW_GAP;
+            }
+            if (parent.getComponentCount() > 0) {
+                Component middle = parent.getComponent(0);
+                Dimension size = middle.getPreferredSize();
+                int x = Math.max(insets.left, Math.min((parent.getWidth() - size.width) / 2, right - size.width));
+                middle.setBounds(x, insets.top + (height - size.height) / 2, size.width, size.height);
+            }
+        }
+
+        @Override
+        public Dimension preferredLayoutSize(Container parent) {
+            Insets insets = parent.getInsets();
+            int width = 0;
+            int height = 0;
+            for (Component child : parent.getComponents()) {
+                Dimension size = child.getPreferredSize();
+                width += size.width + JoinedButtons.ROW_GAP;
+                height = Math.max(height, size.height);
+            }
+            return new Dimension(width + insets.left + insets.right, height + insets.top + insets.bottom);
+        }
+
+        @Override
+        public Dimension minimumLayoutSize(Container parent) {
+            return preferredLayoutSize(parent);
+        }
+
+        @Override
+        public void addLayoutComponent(String name, Component comp) {
+        }
+
+        @Override
+        public void removeLayoutComponent(Component comp) {
+        }
+    }
     private final JPanel content = new JPanel();
     private final ConnectivityContext connectivityContext;
     private final DeviceSessionManager sessionManager;
@@ -41,7 +97,7 @@ public class DevicePane {
     private final FirmwareRollbackController rollbackController;
     private final StatusPanelWithProgressBar statusPanel;
     private final JCheckBox autoUpdateBundle = new JCheckBox("Auto-update Software", AutoupdateProperty.get());
-    private final JCheckBox migrateSettings = new JCheckBox("Migrate Settings", true);
+    private final JCheckBox migrateSettings = new JCheckBox("Try to keep my current tune", true);
     // Previous state rendered on the EDT — used to detect the *transition* into a bootloader state so we
     // pull focus to the Device tab only once, not on every scan cycle [tag:better_ux_for_flashing].
     private SessionState lastRenderedState;
@@ -75,7 +131,7 @@ public class DevicePane {
             showFullScreenPanel,
             closeFullScreenPanel);
         rollbackController.setLinkManager(uiContext.getLinkManager());
-        selector.setFirmwareUpdateInterceptor(rollbackController::startLatestUpdate);
+        selector.setTargetedFirmwareUpdateInterceptor(rollbackController::startLatestUpdate);
         selector.setExternalBusySupplier(rollbackController::isBusy);
         selector.addFirmwareControl(rollbackController.getRollbackButton());
 
@@ -85,27 +141,47 @@ public class DevicePane {
         // kept only as a populated *model* feeding ProgramSelector's flash target (no visible picker
         // needed for the single-board case). [tag:better_ux_for_flashing]
         content.setLayout(new BorderLayout());
-        JPanel column = new JPanel();
-        column.setLayout(new BoxLayout(column, BoxLayout.Y_AXIS));
-        content.add(column, BorderLayout.NORTH);
 
-        autoUpdateBundle.setAlignmentX(Component.LEFT_ALIGNMENT);
+        autoUpdateBundle.setToolTipText("Update this console software automatically when a newer version is available");
+        autoUpdateBundle.setOpaque(false);
         autoUpdateBundle.addActionListener(e -> PersistentConfiguration.setBoolProperty(
             AutoupdateProperty.AUTO_UPDATE_BUNDLE_PROPERTY, autoUpdateBundle.isSelected()));
-        column.add(autoUpdateBundle);
 
-        migrateSettings.setAlignmentX(Component.LEFT_ALIGNMENT);
+        migrateSettings.setToolTipText("Carry the current tune over to the new firmware when updating");
+        migrateSettings.setOpaque(false);
         migrateSettings.addActionListener(e -> MigrateSettingsCheckboxState.isMigrationNeeded = migrateSettings.isSelected());
         MigrateSettingsCheckboxState.isMigrationNeeded = true;
-        column.add(migrateSettings);
 
-        JComponent selectorControl = selector.getControl();
-        selectorControl.setAlignmentX(Component.LEFT_ALIGNMENT);
-        column.add(selectorControl);
+        // toolbar in the Gauges/Lua style [tag:console_theme]: the update button in the middle, where
+        // it always was, update options and the how-to link on the right
+        selector.useToolbarStyle(CommandIcon.UPLOAD);
+        JPanel actions = new JPanel(new FlowLayout(FlowLayout.LEFT, JoinedButtons.ROW_GAP, 0));
+        actions.setOpaque(false);
+        actions.add(selector.getControl());
+        // GridBagLayout centres the options vertically in the toolbar
+        JPanel options = new JPanel(new GridBagLayout());
+        options.setOpaque(false);
+        GridBagConstraints c = new GridBagConstraints();
+        c.insets = new Insets(0, 0, 0, 16);
+        options.add(autoUpdateBundle, c);
+        options.add(migrateSettings, c);
+        c.insets = new Insets(0, 0, 0, JoinedButtons.ROW_GAP);
+        options.add(ProgramSelector.createHelpButton(), c);
+        JPanel toolbar = new ToolbarStrip(new CenteredLayout());
+        toolbar.setBorder(BorderFactory.createEmptyBorder(8, 0, 9, JoinedButtons.ROW_END_INSET - JoinedButtons.ROW_GAP));
+        toolbar.add(actions);
+        toolbar.add(options);
+        content.add(toolbar, BorderLayout.NORTH);
 
-        // Status log fills the middle; the StatusPanelWithProgressBar keeps its progress bar at the
-        // very bottom of the pane.
-        content.add(statusPanel.getContent(), BorderLayout.CENTER);
+        // Status log fills the middle under its own header; the StatusPanelWithProgressBar keeps its
+        // progress bar at the very bottom of the pane.
+        JButton copyLog = new JButton(COPY_LOG);
+        copyLog.setToolTipText("Copy the whole log, e.g. to paste into a support request");
+        copyLog.addActionListener(e -> statusPanel.copyLogToClipboard());
+        JPanel logPanel = new JPanel(new BorderLayout());
+        logPanel.add(ToolbarStrip.header(ACTIVITY, new JoinedButtons(copyLog)), BorderLayout.NORTH);
+        logPanel.add(statusPanel.getContent(), BorderLayout.CENTER);
+        content.add(logPanel, BorderLayout.CENTER);
 
         sessionManager.addListener((state, hardware) -> SwingUtilities.invokeLater(() -> render(state, hardware)));
     }
@@ -185,20 +261,11 @@ public class DevicePane {
 
     static String bootloaderGuidance(final SessionState state) {
         if (state == SessionState.DEVICE_IN_DFU) {
-            if (DfuFlasher.isDfuProgrammingSupported()
-                && com.rusefi.maintenance.ManualDfuRecovery.isUniversalBundle(
-                    com.rusefi.core.io.BundleUtil.getBundleTarget())) {
-                return "Board is in the DFU bootloader - click Manual DFU Update to pick the board and firmware."
-                    + (OsUtil.isLinux() ? " Flashing uses dfu-util." : "");
-            }
-            if (OsUtil.isLinux()) {
-                return "Board is in the DFU bootloader - click Update Firmware to flash with dfu-util.";
-            }
             return DfuFlasher.isDfuProgrammingSupported()
-                ? "Board is in the DFU bootloader - click Update Firmware to flash."
-                : "Board is in the DFU bootloader. DFU flashing is not supported on this platform.";
+                ? "Your ECU is in recovery mode. Use Recover ECU to choose its board and firmware."
+                : "Your ECU is in recovery mode. Recovery is not supported on this platform.";
         }
-        return "Board is in the OpenBLT bootloader — click Update Firmware to flash.";
+        return "Bootloader detected — click Update ECU firmware to continue.";
     }
 
     static boolean isBootloaderState(final SessionState state) {
