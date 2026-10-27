@@ -1,7 +1,12 @@
+# List of all the board related files.
 BOARDCPPSRC =  $(BOARD_DIR)/board_configuration.cpp
+
+# defines SHORT_BOARD_NAME
 include $(BOARD_DIR)/meta-info.env
-DDEFS += -DFIRMWARE_ID=\"KRC_ECU_E36\"
+
+# Override DEFAULT_ENGINE_TYPE
 IS_STM32F429 = yes
+DDEFS += -DFIRMWARE_ID=\"KRC_ECU_E36\"
 
 DDEFS += -DLED_CRITICAL_ERROR_BRAIN_PIN=Gpio::E8
 
