@@ -1,4 +1,3 @@
-include $(PROJECT_DIR)/hw_layer/ports/stm32/2mb_flash.mk   # this board has 2Mb chip
 include $(BOARD_DIR)/meta-info.env
 
 BOARDCPPSRC =  $(BOARD_DIR)/board_configuration.cpp
