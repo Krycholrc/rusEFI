@@ -1,0 +1,180 @@
+pins:
+  - id: D8
+    class: outputs
+    ts_name: INJ1
+
+  - id: D9
+    class: outputs
+    ts_name: INJ2
+
+  - id: D10
+    class: outputs
+    ts_name: INJ3
+
+  - id: D11
+    class: outputs
+    ts_name: INJ4
+
+  - id: D12
+    class: outputs
+    ts_name: INJ5
+
+  - id: D13
+    class: outputs
+    ts_name: INJ6
+
+  - id: D14
+    class: outputs
+    ts_name: INJ7
+
+  - id: D15
+    class: outputs
+    ts_name: INJ8
+
+  - id: E0
+    class: outputs
+    ts_name: IGN1
+
+  - id: E1
+    class: outputs
+    ts_name: IGN2
+
+  - id: E2
+    class: outputs
+    ts_name: IGN3
+
+  - id: E3
+    class: outputs
+    ts_name: IGN4
+
+  - id: E4
+    class: outputs
+    ts_name: IGN5
+
+  - id: E5
+    class: outputs
+    ts_name: IGN6
+
+  - id: E6
+    class: outputs
+    ts_name: IGN7
+
+  - id: E7
+    class: outputs
+    ts_name: IGN8
+
+  - id: B8
+    class: outputs
+    ts_name: LOW1
+
+  - id: B9
+    class: outputs
+    ts_name: LOW2
+
+  - id: E8
+    class: outputs
+    ts_name: LOW3
+
+  - id: E9
+    class: outputs
+    ts_name: LOW4
+
+  - id: E10
+    class: outputs
+    ts_name: LOW5
+
+  - id: E11
+    class: outputs
+    ts_name: LOW6
+
+  - id: D7
+    class: outputs
+    ts_name: TACHO
+
+  - id: E10
+    class: outputs
+    ts_name: A/C_RLY
+
+  - id: EFI_ADC_0
+    class: analog_inputs
+    ts_name: CLT
+
+  - id: EFI_ADC_1
+    class: analog_inputs
+    ts_name: IAT
+
+  - id: EFI_ADC_2
+    class: analog_inputs
+    ts_name: AUX_T
+
+  - id: EFI_ADC_3
+    class: analog_inputs
+    ts_name: MAP
+
+  - id: EFI_ADC_4
+    class: analog_inputs
+    ts_name: BATT
+
+  - id: EFI_ADC_5
+    class: analog_inputs
+    ts_name: BARO
+
+  - id: EFI_ADC_6
+    class: analog_inputs
+    ts_name: AIN1
+
+  - id: EFI_ADC_12
+    class: analog_inputs
+    ts_name: AIN2
+
+  - id: EFI_ADC_13
+    class: analog_inputs
+    ts_name: AIN3
+
+  - id: EFI_ADC_14
+    class: analog_inputs
+    ts_name: AIN4
+
+  - id: EFI_ADC_15
+    class: analog_inputs
+    ts_name: AIN5
+
+  - id: EFI_ADC_8
+    class: analog_inputs
+    ts_name: AIN6
+
+  - id: EFI_ADC_9
+    class: analog_inputs
+    ts_name: AIN7
+
+  - id: EFI_ADC_5
+    class: analog_inputs
+    ts_name: AIN8
+
+  - id: D3
+    class: event_inputs
+    ts_name: CRANK
+
+  - id: D4
+    class: event_inputs
+    ts_name: CAM
+
+  - id: [E12, E12]
+    class: [switch_inputs, event_inputs]
+    ts_name: IN1
+
+  - id: [E13, E13]
+    class: [switch_inputs, event_inputs]
+    ts_name: IN2
+
+  - id: [E14, E14]
+    class: [switch_inputs, event_inputs]
+    ts_name: IN3
+
+  - id: E15
+    class: [switch_inputs, event_inputs]
+    ts_name: IN4
+
+  - id: D6
+    class: [switch_inputs, event_inputs]
+    ts_name: IN5
