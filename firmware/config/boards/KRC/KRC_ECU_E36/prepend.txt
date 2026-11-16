@@ -57,4 +57,3 @@
 #define ts_show_cylinder_11 false
 #define ts_show_cylinder_12 false
 
-#define MAX_CYLINDER_COUNT 6
