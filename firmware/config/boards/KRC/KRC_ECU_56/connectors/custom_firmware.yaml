@@ -91,10 +91,6 @@ pins:
     class: outputs
     ts_name: TACHO
 
-  - id: E10
-    class: outputs
-    ts_name: A/C_RLY
-
   - id: EFI_ADC_0
     class: analog_inputs
     ts_name: CLT
