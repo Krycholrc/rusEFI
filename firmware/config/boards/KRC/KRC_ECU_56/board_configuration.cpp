@@ -18,7 +18,6 @@ static void KRC_ECU_56_boardDefaultConfiguration() {
 	engineConfiguration->tachOutputPin = Gpio::D7;
 
 	//Input pin
-	engineConfiguration->vehicleSpeedSensorInputPin = Gpio::B6;
 	engineConfiguration->triggerInputPins[0] = Gpio::D3;
 	engineConfiguration->camInputs[0] = Gpio::D4;
 
