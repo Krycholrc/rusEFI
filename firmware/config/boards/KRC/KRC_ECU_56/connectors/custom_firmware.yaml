@@ -163,10 +163,10 @@ pins:
     class: [switch_inputs, event_inputs]
     ts_name: IN3
 
-  - id: E15
+  - id: [E15, E15]
     class: [switch_inputs, event_inputs]
     ts_name: IN4
 
-  - id: D6
+  - id: [D6, D6]
     class: [switch_inputs, event_inputs]
     ts_name: IN5
