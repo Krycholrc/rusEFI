@@ -111,10 +111,6 @@ pins:
     class: analog_inputs
     ts_name: BATT
 
-  - id: EFI_ADC_5
-    class: analog_inputs
-    ts_name: BARO
-
   - id: EFI_ADC_6
     class: analog_inputs
     ts_name: AIN1
