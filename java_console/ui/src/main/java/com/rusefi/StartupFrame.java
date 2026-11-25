@@ -528,6 +528,8 @@ public class StartupFrame {
             asyncJobExecutor, ecuPortToUse, softwareUpdateCoordinator,
             this::showFullScreenPanel, this::closeFullScreenPanel, () -> frame,
             this::restartApplication);
+        // [tag:update_restart_prompt] once handed over, the main console asks instead and restarts its own way
+        startupUpdateActions.setRestartPromptAllowed(() -> !isProceeding);
         startupUpdateActions.configureFirmwareSelector(selector);
 
         JPanel firmwareTabPanel = new JPanel(new BorderLayout());
@@ -1446,6 +1448,10 @@ public class StartupFrame {
      * Flip the root {@link CardLayout}. The frame stays fixed-maximized (#9715), so we relayout
      * the content in place rather than packing/resizing the window.
      */
+    JFrame getFrameForTests() {
+        return frame;
+    }
+
     private void showCard(String name) {
         CardLayout cl = (CardLayout) rootContent.getLayout();
         cl.show(rootContent, name);
