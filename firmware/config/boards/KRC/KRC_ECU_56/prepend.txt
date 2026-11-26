@@ -54,11 +54,16 @@
 #define ts_show_onboard_accelerometer false
 #define ts_show_advanced_hardware true
 #define ts_show_alternator false
-#define ts_show_cylinder_7 true
-#define ts_show_cylinder_8 true
+
 #define ts_show_cylinder_9 false
 #define ts_show_cylinder_10 false
 #define ts_show_cylinder_11 false
 #define ts_show_cylinder_12 false
+#define ts_show_fuel_trim_cylinder_9 false
+#define ts_show_fuel_trim_cylinder_10 false
+#define ts_show_fuel_trim_cylinder_11 false
+#define ts_show_fuel_trim_cylinder_12 false
+
+#define MAX_CYLINDER_COUNT 8
 
 
