@@ -29,7 +29,7 @@ static_assert(sizeof(page4_container_s) <= MFS_CFG_MAX_RECORD_SIZE,
 static page4_container_s secondTablesContainer;
 
 void secondTablesSetDefaults() {
-	secondTablesContainer.data = {};
+	ZERO_STRUCT(secondTablesContainer.data);
 
 	// Start with the primary tables/bins as defaults
 	copyTable(secondTablesContainer.data.secondVeTable, config->veTable);

@@ -2,8 +2,10 @@ package com.rusefi.ui.widgets.tune;
 
 import com.opensr5.ConfigurationImage;
 import com.opensr5.ConfigurationImageGetterSetter;
+import com.opensr5.ini.ExpressionEvaluator;
 import com.opensr5.ini.IniFileModel;
 import com.opensr5.ini.TableModel;
+import com.opensr5.ini.TsStringFunction;
 import com.opensr5.ini.field.ArrayIniField;
 import com.opensr5.ini.field.IniField;
 import com.opensr5.ini.field.PcVariableArrayIniField;
@@ -33,9 +35,12 @@ import java.awt.event.FocusAdapter;
 import java.awt.event.FocusEvent;
 import java.awt.geom.Ellipse2D;
 import java.awt.geom.Point2D;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Optional;
 import java.util.function.Consumer;
 import java.util.function.BiConsumer;
+import java.util.function.Function;
 import java.util.function.Supplier;
 
 public class TuningTableView {
@@ -128,6 +133,8 @@ public class TuningTableView {
     private ConfigurationImage imageTarget;
     private ArrayIniField zBinsField;
     private ConfigurationImage axisImageTarget;
+    private ConfigurationImage displayXAxisImage;
+    private ConfigurationImage displayYAxisImage;
     private ArrayIniField xBinsField;
     private ArrayIniField yBinsField;
     private final JTextField xAxisEditor = new JTextField();
@@ -561,7 +568,7 @@ public class TuningTableView {
                 return;
             }
             orientationNode.setBoolProperty(key, option.isSelected());
-            displayTable(currentIni, currentTableName, imageTarget, axisImageTarget);
+            displayTable(currentIni, currentTableName, imageTarget, displayXAxisImage, displayYAxisImage);
             onOrientationChange.run();
         });
         menu.add(option);
@@ -661,6 +668,58 @@ public class TuningTableView {
         }
         surface3DView.setSelection(selection);
         mini3DView.setSelection(selection);
+    }
+
+    /**
+     * Turns an INI {@code xyLabels} entry into display text, or null. Labels can be expressions that
+     * name the selected load source, e.g. {@code {bitStringValue(veAxisLabels, veLoadSrc)}}; their
+     * settings are read from whichever of the table's images holds that settings page.
+     */
+    private static Function<String, String> axisLabelResolver(IniFileModel ini, TableModel iniTable,
+                                                              ConfigurationImage zImage,
+                                                              ConfigurationImage xAxisImage,
+                                                              ConfigurationImage yAxisImage) {
+        Map<Integer, ConfigurationImage> imageByPage = new HashMap<>();
+        putPageImage(imageByPage, ini, iniTable.getXBinsConstant(), xAxisImage);
+        putPageImage(imageByPage, ini, iniTable.getYBinsConstant(), yAxisImage);
+        putPageImage(imageByPage, ini, iniTable.getZBinsConstant(), zImage);
+        Function<IniField, Double> settingValue = field -> {
+            ConfigurationImage image = imageByPage.get(field.getPageIndex());
+            boolean inside = image != null && field.getOffset() >= 0
+                && field.getOffset() + field.getSize() <= image.getSize();
+            return inside ? image.readNumericValue(field) : null;
+        };
+        ConfigurationImage mainPage = imageByPage.getOrDefault(0, zImage);
+        return label -> {
+            if (label == null || !TsStringFunction.containsStringFunction(label)) {
+                return plainLabel(label);
+            }
+            String resolved = TsStringFunction.resolveDisplayLabelWithVariables(label, ini, mainPage,
+                expression -> ExpressionEvaluator.resolveVariables(expression, ini, settingValue));
+            return plainLabel(resolved);
+        };
+    }
+
+    private static void putPageImage(Map<Integer, ConfigurationImage> imageByPage, IniFileModel ini,
+                                     String fieldName, ConfigurationImage image) {
+        if (fieldName == null || image == null) {
+            return;
+        }
+        ini.findIniField(fieldName).ifPresent(field -> imageByPage.putIfAbsent(field.getPageIndex(), image));
+    }
+
+    /**
+     * Corner header names, "row axis \ column axis", so tuners can tell which axis is which: the
+     * resolved INI label; without one, the axis output channel, then the bins constant.
+     */
+    private static String axisName(String text, String channel, String binsConstant) {
+        if (text != null) {
+            return text;
+        }
+        if (channel != null && !channel.trim().isEmpty()) {
+            return channel.trim();
+        }
+        return binsConstant == null ? "" : binsConstant;
     }
 
     /** INI axis labels and units can be expressions; only plain text is shown. */
@@ -1647,6 +1706,11 @@ public class TuningTableView {
     }
 
     public void displayTable(IniFileModel iniFile, String tableName, ConfigurationImage zImage, ConfigurationImage axisImage) {
+        displayTable(iniFile, tableName, zImage, axisImage, axisImage);
+    }
+
+    public void displayTable(IniFileModel iniFile, String tableName, ConfigurationImage zImage,
+                             ConfigurationImage xAxisImage, ConfigurationImage yAxisImage) {
         finishXAxisEdit(false);
         if (table.isEditing()) {
             table.getCellEditor().cancelCellEditing();
@@ -1669,8 +1733,8 @@ public class TuningTableView {
         Double[][] storedValues = ConfigurationImageGetterSetter.getArrayValues(ltft, zImage);
 
         // X and Y bins (RPM and load) are on page 1
-        Double[] storedX = extractAxisBins(iniFile, iniTable.getXBinsConstant(), axisImage);
-        Double[] storedY = extractAxisBins(iniFile, iniTable.getYBinsConstant(), axisImage);
+        Double[] storedX = extractAxisBins(iniFile, iniTable.getXBinsConstant(), xAxisImage);
+        Double[] storedY = extractAxisBins(iniFile, iniTable.getYBinsConstant(), yAxisImage);
 
         currentIni = iniFile;
         currentTableName = tableName;
@@ -1688,22 +1752,30 @@ public class TuningTableView {
 
         this.imageTarget = zImage;
         this.zBinsField = ltft;
-        this.axisImageTarget = axisImage;
+        this.displayXAxisImage = xAxisImage;
+        this.displayYAxisImage = yAxisImage;
+        // Editing only supports a single shared axis image; split images are for display.
+        this.axisImageTarget = xAxisImage == yAxisImage ? xAxisImage : null;
         this.xBinsField = editableAxisField(iniFile,
             flipAxes ? iniTable.getYBinsConstant() : iniTable.getXBinsConstant());
         this.yBinsField = editableAxisField(iniFile,
             flipAxes ? iniTable.getXBinsConstant() : iniTable.getYBinsConstant());
 
+        Function<String, String> labels = axisLabelResolver(iniFile, iniTable, zImage, xAxisImage, yAxisImage);
+        String storedXLabel = labels.apply(iniTable.getXLabel());
+        String storedYLabel = labels.apply(iniTable.getYLabel());
+        String storedXName = axisName(storedXLabel, iniTable.getXBinsChannel(), iniTable.getXBinsConstant());
+        String storedYName = axisName(storedYLabel, iniTable.getYBinsChannel(), iniTable.getYBinsConstant());
         TuningTableModel model = new TuningTableModel(dataValues, xBins, yBins, precision, !viewMode,
             edited -> commitEdit(edited, table.getSelectedRows(), table.getSelectedColumns()),
-            flipAxes ? "RPM \\ Load" : "Load \\ RPM");
-        if (!viewMode && axisImage != null && yBinsField != null) {
+            flipAxes ? storedXName + " \\ " + storedYName : storedYName + " \\ " + storedXName);
+        if (!viewMode && axisImageTarget != null && yBinsField != null) {
             model.onYAxisEdit = (index, value) -> setAxisValue(false, index, value);
         }
         model.xPrecision = xBinsField == null ? precision : IniField.parseDigits(xBinsField.getDigits());
         model.yPrecision = yBinsField == null ? precision : IniField.parseDigits(yBinsField.getDigits());
-        String xLabel = plainLabel(flipAxes ? iniTable.getYLabel() : iniTable.getXLabel());
-        String yLabel = plainLabel(flipAxes ? iniTable.getXLabel() : iniTable.getYLabel());
+        String xLabel = flipAxes ? storedYLabel : storedXLabel;
+        String yLabel = flipAxes ? storedXLabel : storedYLabel;
         String zLabel = plainLabel(ltft.getUnits());
         surface3DView.setAxisTitles(xLabel, yLabel, zLabel);
         mini3DView.setAxisTitles(xLabel, yLabel, zLabel);
@@ -1921,6 +1993,9 @@ public class TuningTableView {
     private Double[] extractAxisBins(IniFileModel iniFile,
                                      String binConstant,
                                      ConfigurationImage image) {
+        if (image == null) {
+            return null;
+        }
         Optional<IniField> binsField = iniFile.findIniField(binConstant);
         if (!binsField.isPresent() || !(binsField.get() instanceof ArrayIniField)) {
             return null;
