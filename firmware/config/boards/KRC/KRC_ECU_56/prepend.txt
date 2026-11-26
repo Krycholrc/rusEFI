@@ -1,4 +1,5 @@
 #define ts_show_full_pinout false
+#define ts_show_stepper false
 #define ts_show_egt true
 #define ts_show_etb true
 #define ts_show_etb_pins false
